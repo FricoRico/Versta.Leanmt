@@ -32,7 +32,8 @@ the perf-tuning follow-up; today the tables are published for review).
 
 ## Status
 
-- **Pending (NEU-22):** `arm64.json` lands from the first green
-  `arm64-test-bench` run on the NEU-16 build-hygiene PR — the run whose table
-  the workflow publishes as a PR comment. The JSON block of that comment is
-  the source; copy it here verbatim in a follow-up commit.
+- **Landed (NEU-22, 2026-10-13):** `arm64.json` is the verbatim `--json`
+  output of the first green `arm64-test-bench` CI run — commit `40c0fb0`
+  (`elin/NEU-16-build-hygiene`), Actions run 38434394203. Read out of the git
+  note `refs/notes/bench-arm64` via `extract-baseline.py`, per contract §3.
+  Refresh only per §4.
