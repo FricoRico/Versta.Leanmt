@@ -16,10 +16,14 @@ the perf-tuning follow-up; today the tables are published for review).
    cross-run — a baseline from different hardware is worse than no baseline.
 2. The run uses the pinned `ende.student.tiny11` v2 fixture
    (sha256 `93821e13b3c511b5...`, fetched by `tests/fixtures/download-fixtures.sh`)
-   with `--iterations 30 --warmup 5`.
+   with `--iterations 30 --warmup 5` and the translation cache disabled
+   (the benchmark measures inference, not memoization — see
+   `bench/bench_translate.cc`).
 3. The file content is exactly the `--json` output of `bench/leanmt-bench`,
-   copied verbatim from the run (artifact `leanmt-bench-<sha>` /
-   `bench-results.json`, also embedded folded in the PR benchmark comment).
+   copied verbatim from the run. Channels: artifact `leanmt-bench-<sha>` /
+   `bench-results.json`; the same JSON is also embedded (folded) in the
+   benchmark comment the workflow posts — PR comment on PR builds, commit
+   comment on push builds.
 4. Refresh deliberately (dedicated commit, usually perf work on the inference
    core), not on every merge — a baseline that moves with each commit cannot
    gate regressions.
