@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Lets the arm64 benchmark leg be run on demand on any branch (e.g. before a
+  # PR is opened) from the Actions tab — no effect unless invoked.
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -13,6 +16,7 @@ concurrency:
 permissions:
   contents: read
   pull-requests: write # benchmark results comment
+  issues: write # issues.createComment targets the PR number (issues API)
 
 env:
   CMAKE_BUILD_TYPE: Release
@@ -41,7 +45,9 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install NDK ${{ matrix.ndk }} and CMake
-        run: sdkmanager "ndk;${{ matrix.ndk }}" "cmake;3.31.6"
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "ndk;${{ matrix.ndk }}" "cmake;3.31.6"
 
       - name: Configure (${{ matrix.abi }})
         run: |
@@ -55,7 +61,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release $FLAGS
 
       - name: Build
-        run: "$ANDROID_HOME/cmake/3.31.6/bin/ninja" -C build
+        run: |
+          "$ANDROID_HOME/cmake/3.31.6/bin/ninja" -C build
 
   # ---------------------------------------------------------------------------
   # Host unit tests, x86_64 (SSE2 dispatch path).
@@ -143,8 +150,8 @@ jobs:
             echo ""
             cat bench-table.md
             echo ""
-            echo "_Fixture: ende.student.tiny11 v2, sha256-pinned. Not a "
-            echo "regression gate yet — baselines land with this harness._"
+            echo "_Fixture: ende.student.tiny11 v2, sha256-pinned._"
+            echo "_Regression baselines live in bench/baselines/ (see README there)._"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload benchmark JSON
@@ -163,6 +170,10 @@ jobs:
           script: |
             const fs = require('fs');
             const table = fs.readFileSync('bench-table.md', 'utf8');
+            // Embed the raw JSON so the numbers are recoverable from the public
+            // PR comment itself — artifact downloads need API auth, comments
+            // don't. bench/baselines/arm64.json is sourced from this.
+            const json = fs.readFileSync('bench-results.json', 'utf8');
             const body = [
               '### leanmt benchmark (' + context.sha.slice(0, 7) + ')',
               '',
@@ -171,8 +182,15 @@ jobs:
               '',
               table,
               '',
-              '_Source: NEU-16 benchmark harness (`bench/leanmt-bench`). JSON in',
-              'the run\'s artifacts._',
+              '<details><summary>bench-results.json (raw)</summary>',
+              '',
+              '```json',
+              json.trim(),
+              '```',
+              '</details>',
+              '',
+              '_Source: benchmark harness `bench/leanmt-bench` (NEU-16).',
+              'Baselines: `bench/baselines/` — see the README there._',
             ].join('\n');
             await github.rest.issues.createComment({
               owner: context.repo.owner,
