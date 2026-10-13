@@ -1,6 +1,7 @@
 #include "ruy/ruy.h"
 
 #include <cmath>
+#include <cstring>
 
 #if defined(__aarch64__)
 #include <arm_neon.h>

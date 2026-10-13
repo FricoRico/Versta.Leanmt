@@ -20,10 +20,12 @@ the perf-tuning follow-up; today the tables are published for review).
    (the benchmark measures inference, not memoization — see
    `bench/bench_translate.cc`).
 3. The file content is exactly the `--json` output of `bench/leanmt-bench`,
-   copied verbatim from the run. Channels: artifact `leanmt-bench-<sha>` /
-   `bench-results.json`; the same JSON is also embedded (folded) in the
-   benchmark comment the workflow posts — PR comment on PR builds, commit
-   comment on push builds.
+   copied verbatim from the run. Channels: git note under
+   `refs/notes/bench-arm64` keyed by commit (primary; no auth needed —
+   `git fetch origin refs/notes/bench-arm64:refs/notes/bench-arm64`), CI
+   artifact `leanmt-bench-<sha>`, and a folded JSON block in the benchmark
+   comment on PR builds. `extract-baseline.py <sha>` does the fetch +
+   verbatim write + schema check.
 4. Refresh deliberately (dedicated commit, usually perf work on the inference
    core), not on every merge — a baseline that moves with each commit cannot
    gate regressions.
