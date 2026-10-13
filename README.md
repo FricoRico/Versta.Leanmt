@@ -124,6 +124,18 @@ Kotlin/Java through the JNI layer shipped alongside this repository in the
 performed on the Kotlin side; leanmt handles model loading, encoding/decoding
 and the quantized inference.
 
+### How the app consumes this repo
+
+The Versta Android app vendors leanmt as a **git submodule** at
+`app/native/jni/third_party/leanmt` (`.gitmodules` on the app's `develop`),
+pinned to a commit on this repo's `main`. Per-ABI SIMD options
+(`USE_NEON` / `LEANMT_ARM64_TUNE` on arm64, `USE_SSE2` on x86) are set by the
+app's `app/native/jni/third_party/CMakeLists.txt`, so **option names and
+semantics are part of the consumption contract — keep them stable**. Landing
+engine changes: merge to `main` here, then bump the app's submodule pin;
+never patch the vendored checkout in place (see the app's
+`app/native/AGENTS.md`, "Vendored libraries").
+
 ## Using the library
 
 The public API centers on `leanmt::Blocking` / `leanmt::Async`, which turn a
