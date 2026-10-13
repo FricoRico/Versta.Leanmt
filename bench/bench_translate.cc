@@ -202,7 +202,14 @@ int main(int argc, char** argv) {
       .shortlist = args.shortlist,
   };
   auto model = std::make_shared<leanmt::Model>(leanmt::Model::Config{}, files);
-  leanmt::Blocking service(leanmt::Config{});
+  leanmt::Config service_config{};
+  // The benchmark measures inference, not memoization: with the default
+  // translation cache (cache_size 1024) every timed iteration after warmup is
+  // a cache hit (~0.04 ms/sentence against a ~14 ms real forward), which would
+  // silently mask inference regressions. The app keeps its own cache
+  // behaviour; that is benchmarked at app level, not here.
+  service_config.cache_size = 0;
+  leanmt::Blocking service(service_config);
   double load_ms = std::chrono::duration<double, std::milli>(
                        std::chrono::steady_clock::now() - load_start)
                        .count();
