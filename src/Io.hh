@@ -41,7 +41,12 @@ using Items = std::vector<Item>;
 
 void set_item(Item& item, Aligned&& aligned);
 
-std::vector<io::Item> load_items(void* current);
+// Parses the binary model-format buffer starting at `data` (of `size` bytes)
+// into typed tensor items. The buffer bounds are validated throughout: a
+// truncated or corrupt file throws std::runtime_error with a precise message
+// instead of reading past the mapping (which used to be undefined behaviour,
+// typically a SIGSEGV against an mmapped file).
+std::vector<io::Item> load_items(void* data, size_t size);
 std::ostream& operator<<(std::ostream& out, const Item& item);
 
 void unquantize_embedding_weights(const int8_t* quantized_weights,

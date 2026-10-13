@@ -57,3 +57,6 @@ dist
 
 # Jetbrains IDE
 .idea
+
+# Downloaded test fixtures (sha256-pinned, fetched on demand)
+tests/fixtures/models/

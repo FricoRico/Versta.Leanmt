@@ -126,23 +126,111 @@ and the quantized inference.
 
 ## Using the library
 
-The public API centers on the `leanmt::Frontend`, which turns a loaded
-`leanmt::Model` into a translator:
+The public API centers on `leanmt::Blocking` / `leanmt::Async`, which turn a
+loaded `leanmt::Model` into translations:
 
 ```cpp
 #include "leanmt/leanmt.hh"
 
-leanmt::Model model;
-model.load(root, modelPath, vocabularyPath, shortlistPath);
+leanmt::Package<std::string> package{
+    .model = modelPath,         // mmap'd int8 model (bergamot binary layout v1)
+    .vocabulary = vocabularyPath,
+    .target_vocabulary = "",    // empty on shared-vocab models
+    .shortlist = shortlistPath, // optional
+};
+auto model = std::make_shared<leanmt::Model>(leanmt::Model::Config{}, package);
 
-leanmt::Frontend frontend;
-leanmt::Request request{"Hello world"};
-leanmt::Response response = frontend.translate(model, request);
-std::cout << response.target.text << "\n";
+leanmt::Blocking service(leanmt::Config{});
+leanmt::Options options;
+auto responses = service.translate(model, {"Hello world, this is a test."}, options);
+std::cout << responses[0].target.text << "\n";
 ```
 
 See the headers under `leanmt/` for the full request/response and annotation
 surface (alignments, scores, sentence boundaries).
+
+## Supported toolchains & build policy
+
+The supported, CI-verified build matrix (`.github/workflows/ci.yml`):
+
+| Axis | Values |
+|------|--------|
+| Android NDK | 27 (r27.3 tested), 28 (r28.1 tested — the app pins 28.1.13356709) |
+| Android ABI | arm64-v8a (NEON + armv8.2-a dotprod), armeabi-v7a, x86 (SSE2), x86_64 (SSE2) |
+| Host | Linux x86_64 (SSE2) and Linux arm64 (NEON), Clang, CMake ≥ 3.22 |
+| C++ standard | C++20 |
+
+LeanMT's own sources compile with `-Wall -Wextra` + fixed suppressions and
+are built with `-Werror` (option `LEANMT_STRICT_WARNINGS`, default ON — keep
+new code warning-clean; CI gates on it). Bundled `third_party/` deps (ruy,
+sentencepiece) build with their own flag sets and are *not* in our warning
+budget.
+
+Per-ABI SIMD flags are selected by the *consuming* superproject in
+`third_party/CMakeLists.txt`-equivalent glue (see Versta.Android's
+`app/native/jni/third_party/CMakeLists.txt`), not by Gradle flavor arguments.
+
+## Native tests
+
+Assertion-based, dependency-free unit tests live in `tests/` and run via
+ctest. Model-dependent cases use a pinned FirefoxMT fixture
+(`ende.student.tiny11` v2, SHA-256 verified):
+
+```bash
+tests/fixtures/download-fixtures.sh   # one-time, checksum-verified
+cmake -B build -DLEANMT_BUILD_TESTS=ON -DUSE_NEON=ON   # or -DUSE_SSE2=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+CI runs the suite on both a Linux x86_64 runner and a native Linux arm64
+runner (real NEON kernels, no emulation).
+
+## Benchmarks
+
+`bench/leanmt-bench` reports translation latency vs. sentence length and peak
+RSS (Linux `VmHWM`), emitting a markdown table plus an optional JSON document:
+
+```bash
+./build/bench/leanmt-bench \
+    --model tests/fixtures/models/ende.student.tiny11/model.intgemm.alphas.bin \
+    --vocab tests/fixtures/models/ende.student.tiny11/vocab.deen.spm \
+    --shortlist tests/fixtures/models/ende.student.tiny11/lex.s2t.bin \
+    --iterations 30 --warmup 5 --json bench-results.json
+```
+
+The CI arm64 job runs it per PR and publishes the table on the pull request
+plus a JSON artifact — same fixture, same runner type, so numbers are
+comparable across changes. Use it to validate latency/RSS regressions before
+merging performance work.
+
+## Model loading contract (fail-fast errors)
+
+`leanmt::Model` construction from a package throws `std::runtime_error` with a
+precise message in these cases (no crashes, no undefined behaviour):
+
+- model/vocab/shortlist file missing or unmappable (`io::MmapFile`);
+- binary model format version mismatch (leanmt expects
+  `kBinaryFileVersion` == 1, the bergamot int8 layout);
+- truncated or corrupt model file — every length field read is bounds-checked
+  against the mapped size;
+- tensor with an unknown/incompatible element type.
+
+A model handle outlives any translation session; sessions must be torn down
+first (the app-side JNI/Kotlin contract also lives in Versta.Android's
+`app/native/AGENTS.md`).
+
+## Debugging switches
+
+Environment levers useful when hunting memory-history-dependent issues:
+
+- `LEANMT_DISABLE_PACK_CACHE=1` — disable ruy's pointer-keyed prepacked-RHS
+  cache entirely (slower; eliminates one entire class of cross-model staleness
+  while bisecting).
+- `LEANMT_POISON_ALLOC=1` — fill fresh heap allocations and recycled arena
+  chunks with 0xCD bytes, turning latent read-before-write bugs into visible
+  output corruption.
+- `LEANMT_DECODE_STATS=1` — per-decode batch/step accounting on stderr.
 
 ## Status
 

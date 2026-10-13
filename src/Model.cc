@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <optional>
@@ -871,6 +872,26 @@ Histories Model::decode_beam(const Tensor &encoder_out, const Tensor &mask,
 Histories Model::forward(const Input &input) const {
   const Tensor &indices = input.indices();
   const Tensor &mask = input.mask();
+
+  // ruy's prepacked-RHS caches live in per-thread GEMM contexts and are keyed
+  // by the source matrix's DATA POINTER (ruy/prepacked_cache.h). That is
+  // sound only while the pointed-to model weights are alive — when a Model is
+  // destroyed and another constructed (e.g. the app switching language
+  // pairs), the fresh tensors routinely land on the recycled addresses, and
+  // the surviving cache serves the previous model's packs: allocator-history-
+  // dependent garbage decodes that pass unnoticed on a warm single-model
+  // process (found via the lifecycle test in NEU-16).
+  //
+  // Invalidation has to happen per thread, so do it at forward() entry: if
+  // the last forward on this thread ran a different model, drop every cached
+  // pack. Same-model consecutive translates (the common case) keep warm
+  // caches; a model switch pays one repack.
+  static thread_local size_t warmed_model_id =  //
+      std::numeric_limits<size_t>::max();
+  if (warmed_model_id != id_) {
+    qmm::clear_all_pack_caches();
+    warmed_model_id = id_;
+  }
 
   // uint64_t batch_size = indices.dim(-2);
   // uint64_t sequence_length = indices.dim(-1);

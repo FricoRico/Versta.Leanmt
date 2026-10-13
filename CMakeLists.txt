@@ -12,13 +12,25 @@ set(CMAKE_VISIBILITY_INLINE_HIDDEN YES)
 option(USE_SSE2 "Use SSE2" OFF)
 option(USE_NEON "Use NEON" OFF)
 
+# First-party warning policy. -Werror applies to leanmt's own sources only —
+# bundled third_party (ruy, sentencepiece) is compiled with their own (older,
+# noisier) flag sets and is explicitly out of our warning budget.
+option(LEANMT_STRICT_WARNINGS "Treat leanmt warnings as errors (-Werror)" ON)
+
 set(LEANMT_COMPILE_OPTIONS
     -Wall
     -Wextra
     -Wno-unknown-pragmas
     -Wno-missing-field-initializers
-    -Wno-unused-function
-    -Wextra-semi)
+    -Wno-unused-function)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  list(APPEND LEANMT_COMPILE_OPTIONS -Wextra-semi)
+endif()
+
+if(LEANMT_STRICT_WARNINGS)
+  list(APPEND LEANMT_COMPILE_OPTIONS -Werror)
+endif()
 
 set(LEANMT_PUBLIC_LIBS "")
 set(LEANMT_INTERFACE_LIBS "")
@@ -66,3 +78,18 @@ set(PROJECT_VERSION_STRING_FULL "v${PROJECT_VERSION}")
 message(STATUS "Project version: ${PROJECT_VERSION_STRING_FULL}")
 
 add_subdirectory(src)
+
+# Native unit tests (ctest) and the latency/RSS benchmark harness. Both are
+# host-only tooling (cross-compiling for Android leaves them off); CI turns
+# them on explicitly. Tests download a pinned, checksum-verified FirefoxMT
+# tiny model at configure/test time — see tests/fixtures/download-fixtures.sh.
+option(LEANMT_BUILD_TESTS "Build the native unit tests (ctest)" OFF)
+if(LEANMT_BUILD_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
+endif()
+
+option(LEANMT_BUILD_BENCH "Build the latency/RSS benchmark harness" OFF)
+if(LEANMT_BUILD_BENCH)
+  add_subdirectory(bench)
+endif()

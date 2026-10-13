@@ -24,29 +24,70 @@ namespace leanmt::io {
 
 namespace {
 
-template <typename Element>
-Element read(void*& read_head) {
-  Element value;
-  std::memcpy(&value, read_head, sizeof(Element));
-  read_head = static_cast<char*>(read_head) + sizeof(Element);
-  return value;
-}
+// Bounds-checked cursor over the model file buffer. Model files arrive from
+// `mmap` of an on-device download/packaged asset; a length field past the end
+// of the mapping must surface as a clear error (fail-fast), never a SIGSEGV
+// from walking off the mapped region.
+class Cursor {
+ public:
+  Cursor(void* data, size_t size)
+      : head_(static_cast<char*>(data)),
+        begin_(static_cast<char*>(data)),
+        end_(head_ + size) {}
 
-template <typename Element>
-std::vector<Element> read_vector(void*& read_head, uint64_t size) {
-  std::vector<Element> values(size);
-  if (size > 0) {
-    std::memcpy(values.data(), read_head, size * sizeof(Element));
+  template <typename Element>
+  Element read(const char* what) {
+    require(sizeof(Element), what);
+    Element value;
+    std::memcpy(&value, head_, sizeof(Element));
+    head_ += sizeof(Element);
+    return value;
   }
-  read_head = static_cast<char*>(read_head) + size * sizeof(Element);
-  return values;
-}
 
-char* read_bytes(void*& read_head, uint64_t size) {
-  auto* begin = static_cast<char*>(read_head);
-  read_head = begin + size;
-  return begin;
-}
+  template <typename Element>
+  std::vector<Element> read_vector(uint64_t count, const char* what) {
+    if (count > remaining() / sizeof(Element)) {
+      fail(what, count * sizeof(Element));
+    }
+    std::vector<Element> values(count);
+    if (count > 0) {
+      std::memcpy(values.data(), head_, count * sizeof(Element));
+    }
+    head_ += count * sizeof(Element);
+    return values;
+  }
+
+  // Returns the current position and advances `size` bytes (caller keeps a
+  // raw view into the buffer; the view is validated to be in-bounds).
+  char* read_bytes(uint64_t size, const char* what) {
+    require(size, what);
+    char* begin = head_;
+    head_ += size;
+    return begin;
+  }
+
+  size_t offset() const { return static_cast<size_t>(head_ - begin_); }
+  size_t remaining() const { return static_cast<size_t>(end_ - head_); }
+
+ private:
+  void require(uint64_t bytes, const char* what) const {
+    if (bytes > remaining()) {
+      fail(what, bytes);
+    }
+  }
+
+  [[noreturn]] void fail(const char* what, uint64_t bytes) const {
+    throw std::runtime_error(
+        "[leanmt] corrupt or truncated model file: reading " + std::string(what) +
+        " (" + std::to_string(bytes) + " bytes) at offset " +
+        std::to_string(offset()) + " exceeds the file's remaining " +
+        std::to_string(remaining()) + " bytes");
+  }
+
+  char* head_;
+  char* begin_;
+  char* end_;
+};
 
 // clang-format off
 // NOLINTBEGIN
@@ -111,8 +152,10 @@ void set_item(Item& item, Aligned&& aligned) {
   };
 }
 
-std::vector<io::Item> load_items(void* current) {
-  uint64_t binary_file_version = read<uint64_t>(current);
+std::vector<io::Item> load_items(void* data, size_t file_size) {
+  Cursor cursor(data, file_size);
+
+  uint64_t binary_file_version = cursor.read<uint64_t>("binary file version");
   if (binary_file_version != kBinaryFileVersion) {
     throw std::runtime_error(
         "[leanmt] model file binary version mismatch: file is v" +
@@ -122,8 +165,9 @@ std::vector<io::Item> load_items(void* current) {
   }
 
   // Read number of headers and based on the information, the headers.
-  uint64_t num_headers = read<uint64_t>(current);
-  std::vector<Header> headers = read_vector<Header>(current, num_headers);
+  uint64_t num_headers = cursor.read<uint64_t>("tensor header count");
+  std::vector<Header> headers =
+      cursor.read_vector<Header>(num_headers, "tensor headers");
 
   // prepopulate items with meta data from headers
   std::vector<io::Item> items;
@@ -131,9 +175,14 @@ std::vector<io::Item> load_items(void* current) {
   for (uint64_t i = 0; i < num_headers; ++i) {
     items[i].type = intercept(headers[i].type);
 
-    // Can someone explain the -1? Remains a mystery to me.
+    // Names are written NUL-terminated; -1 strips the terminator.
     size_t length = headers[i].name_length;
-    char* name = read_bytes(current, length);
+    char* name = cursor.read_bytes(length, "tensor name");
+    if (length < 1 || name[length - 1] != '\0') {
+      throw std::runtime_error(
+          "[leanmt] corrupt model file: tensor name at header index " +
+          std::to_string(i) + " is empty or not NUL-terminated");
+    }
     items[i].name = std::string(name, length - 1);
   }
 
@@ -142,15 +191,22 @@ std::vector<io::Item> load_items(void* current) {
     Item& item = items[i];
 
     uint64_t size = headers[i].shape_length;
-    std::vector<int> shape = read_vector<int>(current, size);
+    std::vector<int> shape = cursor.read_vector<int>(size, "tensor shape");
+    for (int dim : shape) {
+      if (dim <= 0) {
+        throw std::runtime_error(
+            "[leanmt] corrupt model file: tensor '" + item.name +
+            "' has non-positive shape dimension " + std::to_string(dim));
+      }
+    }
 
     // This copy has to be incurred, because metadata.
     item.shape.set(shape.data(), shape.data() + shape.size());
   }
 
   // move by offset bytes, aligned to 256-bytes boundary
-  uint64_t offset = read<uint64_t>(current);
-  read_bytes(current, offset);
+  uint64_t offset = cursor.read<uint64_t>("data section offset");
+  cursor.read_bytes(offset, "alignment padding to data section");
 
   // Keep extra items for the int8-prepared (PrepareB-form) versions of any
   // embeddings that double as the decoder output projection. For shared-vocab
@@ -179,11 +235,23 @@ std::vector<io::Item> load_items(void* current) {
   for (uint64_t i = 0; i < num_headers; ++i) {
     Item& item = items[i];
     uint64_t size = headers[i].data_length;
-    char* ptr = read_bytes(current, size);
+    char* ptr = cursor.read_bytes(size, "tensor payload");
     // We're about to read-data.
     // We can either make it point to mmap, which is aligned,
     // or we can create a new aligned.
     if (item.type == Type::ig8) {
+      // ig8 payloads are `shape.elements()` int8 values followed by an f32
+      // quantization multiplier (and possibly 256-byte alignment padding,
+      // which `size` covers). Validate the logical payload fits in the
+      // advertised data_length before touching it.
+      size_t num_elements = item.shape.elements();
+      if (num_elements + sizeof(float) > static_cast<size_t>(size)) {
+        throw std::runtime_error(
+            "[leanmt] corrupt model file: data_length of ig8 tensor '" +
+            item.name + "' (" + std::to_string(size) +
+            " bytes) cannot hold " + std::to_string(num_elements) +
+            " int8 values plus the f32 quantization multiplier");
+      }
       // since Embedding layer quantized weights need to be dequantised, we
       // have a special case for the embedding tensors. Two-vocab models
       // (en-zh, en-ja, ...) have separate `encoder_Wemb` / `decoder_Wemb`;
@@ -208,7 +276,6 @@ std::vector<io::Item> load_items(void* current) {
         // with no output-projection GEMM. Drop those by clearing the name;
         // for `decoder_Wemb_QuantMultA` (the only source on two-vocab
         // models like en-ja / zh_hant-en) un-quantize and store as f32.
-        size_t num_elements = item.shape.elements();
         char* mult_addr = ptr + num_elements;
         float quant_mult;
         std::memcpy(&quant_mult, mult_addr, sizeof(float));
@@ -220,7 +287,6 @@ std::vector<io::Item> load_items(void* current) {
         set_item(item, std::move(aligned));
         item.type = Type::f32;
       } else if (is_embedding_name(item.name)) {  // NOLINT
-        size_t num_elements = item.shape.elements();
         // At the end of items is the quantization multiplier.So we do some
         // pointer arithmetic to move ahead of the elements to extract the
         // quantization multiplier.

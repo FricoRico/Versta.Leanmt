@@ -128,7 +128,7 @@ std::vector<AttentionContext> Decoder::prepare_contexts(
 Transformer::Transformer(size_t encoder_layers, size_t decoder_layers,
                          size_t num_heads, size_t feed_forward_depth,
                          View model)
-    : items_(io::load_items(model.data)),
+    : items_(io::load_items(model.data, model.size)),
       encoder_(encoder_layers, num_heads, feed_forward_depth),  //
       decoder_(decoder_layers, num_heads, feed_forward_depth,
                decoder_embedding_) {
@@ -325,6 +325,12 @@ void Transformer::load_parameters() {
     // GEMM through `encoder_Wemb` at all. So these are harmlessly
     // unconsumed; don't warn.
     if (entry == "Wemb_QuantMultA" || entry == "encoder_Wemb_QuantMultA") {
+      continue;
+    }
+    // `special:model.yml` is marian's embedded training-configuration YAML.
+    // leanmt takes its architecture config from the caller (Model::Config),
+    // not the blob, so it is deliberately not ingested. No warning.
+    if (entry == "special:model.yml") {
       continue;
     }
     std::cerr << "[warn] Failed to ingest expected load of " << entry << "\n";

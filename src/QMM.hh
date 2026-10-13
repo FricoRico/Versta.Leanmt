@@ -71,6 +71,13 @@ void prepare_weight_quantized_transposed(const int8_t* input, int8_t* output,
 // pack.
 void clear_standalone_pack_cache();
 
+// Drops ALL pack caches on the calling thread (both the per-decode cache for
+// heap tensors and the "persistent" one for model tensors). Called by
+// Model::forward when the model that last ran on this thread changes — the
+// persistent cache keys packs by data pointer, which is only sound while the
+// pointed-to model tensors are alive and never re-mapped.
+void clear_all_pack_caches();
+
 }  // namespace detail
 
 Tensor affine(const Tensor& x, const Tensor& W, const Tensor& b, float a_quant,
@@ -111,5 +118,12 @@ void prepare_weight_quantized_transposed(const int8_t* input, int8_t* output,
                                          size_t rows, size_t cols);
 
 void clear_standalone_pack_cache();
+
+// Drops ALL pack caches on the calling thread (both the per-decode cache for
+// heap tensors and the "persistent" one for model tensors). Called by
+// Model::forward when the model that last ran on this thread changes — the
+// persistent cache keys packs by data pointer, which is only sound while the
+// pointed-to model tensors are alive and never re-mapped.
+void clear_all_pack_caches();
 
 }  // namespace leanmt::qmm

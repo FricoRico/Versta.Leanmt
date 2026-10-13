@@ -69,4 +69,6 @@ void prepare_weight_quantized_transposed(const int8_t* input, int8_t* output,
 
 void clear_standalone_pack_cache() { detail::clear_standalone_pack_cache(); }
 
+void clear_all_pack_caches() { detail::clear_all_pack_caches(); }
+
 }  // namespace leanmt::qmm

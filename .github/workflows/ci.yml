@@ -1,0 +1,182 @@
+name: build-and-test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write # benchmark results comment
+
+env:
+  CMAKE_BUILD_TYPE: Release
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Warning-gated compile matrix over the ABIs the app ships and the NDK
+  # versions we support (27.x tested on 27.3, 28.x tested on 28.1 — the app's
+  # pinned NDK). leanmt's own sources build with -Werror on.
+  # ---------------------------------------------------------------------------
+  android-build:
+    name: android ${{ matrix.abi }} / NDK ${{ matrix.ndk }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, armeabi-v7a, x86, x86_64]
+        ndk: ["27.3.13750724", "28.1.13356709"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK ${{ matrix.ndk }} and CMake
+        run: sdkmanager "ndk;${{ matrix.ndk }}" "cmake;3.31.6"
+
+      - name: Configure (${{ matrix.abi }})
+        run: |
+          FLAGS="-DANDROID_ABI=${{ matrix.abi }} -DANDROID_PLATFORM=android-28"
+          case "${{ matrix.abi }}" in
+            arm64-v8a) FLAGS="$FLAGS -DUSE_NEON=ON -DLEANMT_ARM64_TUNE=ON" ;;
+            x86|x86_64) FLAGS="$FLAGS -DUSE_SSE2=ON" ;;
+          esac
+          "$ANDROID_HOME/cmake/3.31.6/bin/cmake" -G Ninja -S . -B build \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_HOME/ndk/${{ matrix.ndk }}/build/cmake/android.toolchain.cmake" \
+            -DCMAKE_BUILD_TYPE=Release $FLAGS
+
+      - name: Build
+        run: "$ANDROID_HOME/cmake/3.31.6/bin/ninja" -C build
+
+  # ---------------------------------------------------------------------------
+  # Host unit tests, x86_64 (SSE2 dispatch path).
+  # ---------------------------------------------------------------------------
+  host-test:
+    name: host x86_64 tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Cache model fixture
+        id: fixture-cache
+        uses: actions/cache@v4
+        with:
+          path: tests/fixtures/models
+          key: leanmt-fixture-ende-tiny11-v2-93821e13b3c511b5
+
+      - name: Download fixture model (pinned sha256)
+        run: tests/fixtures/download-fixtures.sh
+
+      - name: Configure
+        env:
+          CC: clang
+          CXX: clang++
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DUSE_SSE2=ON -DLEANMT_BUILD_TESTS=ON -DLEANMT_BUILD_BENCH=ON
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  # ---------------------------------------------------------------------------
+  # Host tests + NEON path on a native arm64 runner (ubuntu-24.04-arm is an
+  # aarch64 machine — real NEON kernels, no cross-compile emulation), followed
+  # by the latency/RSS benchmark whose results are published on the PR.
+  # ---------------------------------------------------------------------------
+  arm64-test-bench:
+    name: arm64 tests + benchmark
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Cache model fixture
+        uses: actions/cache@v4
+        with:
+          path: tests/fixtures/models
+          key: leanmt-fixture-ende-tiny11-v2-93821e13b3c511b5
+
+      - name: Download fixture model (pinned sha256)
+        run: tests/fixtures/download-fixtures.sh
+
+      - name: Configure
+        env:
+          CC: clang
+          CXX: clang++
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DUSE_NEON=ON -DLEANMT_BUILD_TESTS=ON -DLEANMT_BUILD_BENCH=ON
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Benchmark
+        run: |
+          F=tests/fixtures/models/ende.student.tiny11
+          ./build/bench/leanmt-bench \
+            --model "$F/model.intgemm.alphas.bin" \
+            --vocab "$F/vocab.deen.spm" \
+            --shortlist "$F/lex.s2t.bin" \
+            --iterations 30 --warmup 5 \
+            --json bench-results.json | tee bench-table.md
+
+      - name: Publish benchmark table to step summary
+        run: |
+          {
+            echo "### leanmt benchmark — ${{ github.sha }} (ubuntu-24.04-arm, NEON, single thread)"
+            echo ""
+            cat bench-table.md
+            echo ""
+            echo "_Fixture: ende.student.tiny11 v2, sha256-pinned. Not a "
+            echo "regression gate yet — baselines land with this harness._"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload benchmark JSON
+        uses: actions/upload-artifact@v4
+        with:
+          name: leanmt-bench-${{ github.sha }}
+          path: |
+            bench-results.json
+            bench-table.md
+          if-no-files-found: error
+
+      - name: Comment benchmark results on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const table = fs.readFileSync('bench-table.md', 'utf8');
+            const body = [
+              '### leanmt benchmark (' + context.sha.slice(0, 7) + ')',
+              '',
+              'Reference arm64 runner (`ubuntu-24.04-arm`), NEON, single thread,',
+              'pinned `ende.student.tiny11` fixture (sha256-verified).',
+              '',
+              table,
+              '',
+              '_Source: NEU-16 benchmark harness (`bench/leanmt-bench`). JSON in',
+              'the run\'s artifacts._',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
