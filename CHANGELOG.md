@@ -5,6 +5,19 @@ slimt/bergamot lineage; upstream syncs list their source commits.
 
 ## [Unreleased]
 
+### Sync (NEU-27, 2026Q4)
+
+- ruy submodule `c04e5e5` → `2264753` (google/ruy master, 2026-07-22).
+  Takes upstream fixes for signed-overflow UB in `MakeKernelParams8bit`
+  (int8 zero-point path), `FlatSize` overflow, allocator nullptr checks,
+  cpuinfo null-processor/`QueryCacheParams` error handling, and arm64
+  assembly (`.inst` vs `.word`, LLVM IAS compatibility). Verified: our
+  `-mevex512` patch is still required (upstream does not carry the fix)
+  and still applies (AVX-512 target names unchanged); ruy's prepacked
+  cache code is untouched in this range, so the NEU-16 model-identity
+  invalidation is unaffected. Rollback: restore pin `c04e5e5`.
+  Full range classification in docs/upstream-review-2026Q4.md.
+
 ### Fixed (NEU-27)
 
 - **Use-after-scope in `Frontend` continuations:** `Options::on_progress`
