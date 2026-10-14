@@ -211,10 +211,38 @@ RSS (Linux `VmHWM`), emitting a markdown table plus an optional JSON document:
     --iterations 30 --warmup 5 --json bench-results.json
 ```
 
-The CI arm64 job runs it per PR and publishes the table on the pull request
-plus a JSON artifact — same fixture, same runner type, so numbers are
-comparable across changes. Use it to validate latency/RSS regressions before
-merging performance work.
+Useful extra flags: `--threads N` sets the ruy intra-op thread budget (see
+below), `--batch N` translates a batch of `N` distinct deterministic sentences
+per call (batched-decode measurement), `--lengths 8,24,60,120` overrides the
+sentence-length set.
+
+The CI arm64 job runs it per PR (single thread, batch 1 — the canonical
+regression-comparable configuration) and publishes the table on the pull
+request plus a JSON artifact — same fixture, same runner type, so numbers are
+comparable across changes. A thread/batch sweep runs additionally on PR
+builds (step summary + perf-sweep comment). Use these to validate latency/RSS
+regressions before merging performance work. Regression baselines live in
+`bench/baselines/`; only numbers produced on the CI arm64 runner are valid
+there (see that directory's README for the provenance contract).
+
+## Threading (intra-op)
+
+leanmt translates on the caller's thread (`Blocking`) or per-request worker
+threads (`Async`). GEMM work inside one translate call is intra-op
+parallelized by ruy at most to the configured budget:
+
+- `leanmt::Model::Config::threads` (default 0) — the deliberate, documented
+  knob; 0 means "leave the process default alone".
+- `leanmt::qmm::set_num_threads(n)` — explicit control, applies to the calling
+  thread immediately and process-wide to threads whose contexts initialize
+  afterwards.
+- `LEANMT_THREADS=n` — environment default, mostly for bench/CI. Default is 1.
+
+ruy splits GEMMs over rows/columns and never the reduction dimension, so
+translation output is bit-identical at any thread count; per-GEMM fan-out
+follows ruy's work-proportional heuristic clamped by the budget. Memory cost
+is one pool per translating thread (workers are created lazily, spin briefly
+before parking).
 
 ## Model loading contract (fail-fast errors)
 
@@ -243,6 +271,8 @@ Environment levers useful when hunting memory-history-dependent issues:
   chunks with 0xCD bytes, turning latent read-before-write bugs into visible
   output corruption.
 - `LEANMT_DECODE_STATS=1` — per-decode batch/step accounting on stderr.
+- `LEANMT_THREADS=n` — process default for the intra-op ruy thread budget
+  (default 1); see the threading section above.
 
 ## Status
 
