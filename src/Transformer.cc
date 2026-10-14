@@ -221,11 +221,25 @@ std::tuple<Tensor, Tensor> Decoder::step(
     size_t sequence_length = 1;
     Shape shape({batch_size, sequence_length, embed_dim});
     Tensor embedding(Type::f32, std::move(shape), name);
-    const float *source = embedding_.data<float>();
-    float *target = embedding.data<float>();
+    float* target = embedding.data<float>();
+    if (embedding_.type() == Type::i8) {
+      // int8-quantized embedding table (the loader keeps Wemb in its int8
+      // payload — NEU-23): dequantize each gathered row with the trailing
+      // multiplier, bit-exact with the f32 copy the old loader kept.
+      const auto* source = embedding_.data<int8_t>();
+      float quantization_multiplier = embedding_.quantization_multiplier();
+      for (size_t batch_id = 0; batch_id < batch_size; batch_id++) {
+        size_t token = previous_step[batch_id];
+        const int8_t* row = source + token * embed_dim;
+        io::unquantize_embedding_weights(row, quantization_multiplier,
+                                         embed_dim, target + batch_id * embed_dim);
+      }
+      return embedding;
+    }
+    const float* source = embedding_.data<float>();
     for (size_t batch_id = 0; batch_id < batch_size; batch_id++) {
       size_t token = previous_step[batch_id];
-      const float *row = source + token * embed_dim;
+      const float* row = source + token * embed_dim;
       std::copy(row, row + embed_dim, target + batch_id * embed_dim);
     }
 

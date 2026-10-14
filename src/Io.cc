@@ -256,9 +256,12 @@ std::vector<io::Item> load_items(void* data, size_t file_size) {
       // have a special case for the embedding tensors. Two-vocab models
       // (en-zh, en-ja, ...) have separate `encoder_Wemb` / `decoder_Wemb`;
       // single-vocab models have a single `Wemb`. The handling is the same:
-      // unquantize the int8 storage to float for embedding lookup, and (for
-      // the embedding that doubles as the decoder output projection) also
-      // produce a PrepareB-prepared int8 alias for the GEMM.
+      // the tensor keeps its int8 storage (embedding gathers dequantize rows
+      // on the fly with the trailing multiplier), and (for the embedding that
+      // doubles as the decoder output projection) a second item aliases the
+      // same bytes with the transposed shape for the GEMM. No f32 copy is
+      // materialized — that used to hold ~32 MiB of permanent heap for the
+      // 32k-vocab tiny11 models, plus another ~8 MiB for the alias copy.
       if (is_quant_mult_a_marker(item.name)) {
         // `*_Wemb_QuantMultA` tensors aren't empty placeholders despite
         // their shape-[1,1] size — marian stores them in the ig8 layout
@@ -287,32 +290,28 @@ std::vector<io::Item> load_items(void* data, size_t file_size) {
         set_item(item, std::move(aligned));
         item.type = Type::f32;
       } else if (is_embedding_name(item.name)) {  // NOLINT
-        // At the end of items is the quantization multiplier.So we do some
-        // pointer arithmetic to move ahead of the elements to extract the
-        // quantization multiplier.
-        char* end = ptr + num_elements;
-        auto* quantization_multiplier_addr = reinterpret_cast<float*>(end);
-        float quantization_multiplier = *(quantization_multiplier_addr);
-
-        // Allocate aligned storage to write out unquantized embeddings.
-        size_t size_as_float = num_elements * sizeof(float);
-        Aligned aligned(kAlignWidth, size_as_float);
-
-        auto* quantized_weights = reinterpret_cast<int8_t*>(ptr);
-        auto* weights = reinterpret_cast<float*>(aligned.data());
-        unquantize_embedding_weights(quantized_weights, quantization_multiplier,
-                                     num_elements, weights);
-        set_item(item, std::move(aligned));
-        item.type = Type::f32;
+        // Keep the embedding table in its int8 payload exactly as mmapped:
+        // `num_elements` int8 values row-major (vocabulary × embedding
+        // dimension) followed by the f32 quantization multiplier. Gathers
+        // dequantize rows on the fly with the same `q[i] * (1/mult)` f32
+        // formula the old load-time pass used (bit-exact), so model outputs
+        // are unchanged. Viewing instead of copying removes the ~32 MiB f32
+        // materialization from peak RSS and the quantize/dequantize pass
+        // from model load.
+        item.view = View{.data = ptr, .size = static_cast<size_t>(size)};
+        item.type = Type::i8;
 
         size_t rows = item.shape.dim(-2);
         size_t cols = item.shape.dim(-1);
-        assert((rows * cols) % 8 == 0);
 
-        // Decide which name the PrepareB-form alias should take. Skip the
-        // alias entirely for `encoder_Wemb` — encoder embeddings are never
-        // used as a GEMM B-matrix. For `decoder_Wemb` and the legacy single
-        // `Wemb`, build the int8 alias for the decoder output projection.
+        // Decide which name the GEMM-shape alias should take. Skip the alias
+        // entirely for `encoder_Wemb` — encoder embeddings are never used as
+        // a GEMM B-matrix. For `decoder_Wemb` and the legacy single `Wemb`,
+        // the decoder output projection GEMMs against this table. The alias
+        // is a view of the same bytes with the dims swapped: the file's
+        // row-major (vocab × dim) int8 payload read as a col-major
+        // (dim × vocab) matrix IS the transpose — no data movement, the old
+        // requantize-transposed copy recovered these same values bit-exactly.
         const bool needs_prepared_alias = (item.name != "encoder_Wemb");
         if (needs_prepared_alias) {
           Item& processed = (item.name == "decoder_Wemb")
@@ -323,18 +322,7 @@ std::vector<io::Item> load_items(void* data, size_t file_size) {
                                : "Wemb_intgemm8";
           processed.shape = Shape({cols, rows});
           processed.type = Type::i8;
-          size_t prepared_size =
-              processed.shape.elements() * sizeof(int8_t) + sizeof(float);
-          Aligned embedding_aligned(kAlignWidth, prepared_size);
-          auto* prepared = reinterpret_cast<int8_t*>(embedding_aligned.data());
-          qmm::prepare_weight_transposed(weights, prepared,
-                                         quantization_multiplier, cols, rows);
-
-          auto* embedding_quantization_multiplier_addr =
-              reinterpret_cast<float*>(prepared + (rows * cols));
-          *embedding_quantization_multiplier_addr = quantization_multiplier;
-
-          set_item(processed, std::move(embedding_aligned));
+          processed.view = item.view;
         }
       } else {
         // The matrix has to be processed to the format expected by the QMM backend.
@@ -374,7 +362,12 @@ std::vector<io::Item> load_items(void* data, size_t file_size) {
 void unquantize_embedding_weights(const int8_t* quantized_weights,
                                   float quantization_multiplier, size_t size,
                                   float* weights) {
-  // Now proceed to unquantize the int8_ts into floats.
+  // Canonical int8→f32 embedding dequantization, applied per gathered row at
+  // lookup time (the loader keeps embedding tables in their int8 storage).
+  // Gather sites call this same helper so results stay bit-exact with the
+  // load-time materialization the loader used to do — same expression, same
+  // evaluation order: reciprocal as a float division, then a per-element
+  // float multiply.
   for (size_t i = 0; i < size; i++) {
     weights[i] = static_cast<float>(quantized_weights[i]) *
                  (1 / quantization_multiplier);

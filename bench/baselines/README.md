@@ -7,7 +7,9 @@ the perf-tuning follow-up; today the tables are published for review).
 ## Files
 
 - `arm64.json` — reference baseline from the `ubuntu-24.04-arm` GitHub runner
-  (aarch64, NEON, single thread, Release build).
+  (aarch64, NEON, Release build at the repo's default ruy thread budget; 1
+  thread until NEU-23's flip, 2 threads after — the refresh commit names the
+  change).
 
 ## Contract (do not hand-edit numbers)
 
@@ -37,3 +39,9 @@ the perf-tuning follow-up; today the tables are published for review).
   (`elin/NEU-16-build-hygiene`), Actions run 38434394203. Read out of the git
   note `refs/notes/bench-arm64` via `extract-baseline.py`, per contract §3.
   Refresh only per §4.
+- **Refreshed (NEU-23, 2026-10-14):** deliberate refresh alongside the ruy
+  thread-budget default flip (1 → 2) and the Wemb int8-storage change —
+  verbatim output of the `arm64-test-bench` push run at commit `4d2f5ad`
+  (`elin/NEU-23-perf`), via `extract-baseline.py`. The file now carries
+  `"threads": 2` and `"batch": 1` fields; `peak RSS after load` dropped
+  141,084 → 101,184 KiB and medians improved 13–16% at 8..60 words.

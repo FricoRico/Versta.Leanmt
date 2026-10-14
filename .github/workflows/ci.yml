@@ -221,10 +221,80 @@ jobs:
           test -s bench-results.json
           test -s bench-table.md
 
+      # NEU-23 tuning instrument: ruy intra-op thread-pool sizing and batched
+      # decode. Runs only on PRs; push builds keep the single canonical bench
+      # above (batch 1 at the shipped default thread count) so its published
+      # numbers stay regression-comparable across merges. The sweep informs
+      # Model::Config.threads and gemv coverage decisions; it does not gate.
+      - name: Benchmark thread/batch sweep (PR only)
+        if: github.event_name == 'pull_request'
+        run: |
+          F=tests/fixtures/models/ende.student.tiny11
+          : > bench-sweep.md
+          : > bench-sweep-files.txt
+          for T in 1 2 4; do
+            for B in 1 4 8; do
+              J="bench-sweep-t${T}-b${B}.json"
+              ./build/bench/leanmt-bench \
+                --model "$F/model.intgemm.alphas.bin" \
+                --vocab "$F/vocab.deen.spm" \
+                --shortlist "$F/lex.s2t.bin" \
+                --iterations 25 --warmup 5 \
+                --threads "$T" --batch "$B" \
+                --json "$J" | sed '1d' >> bench-sweep.md
+              echo "$J" >> bench-sweep-files.txt
+            done
+          done
+
+      - name: Publish sweep to step summary (PR only)
+        if: github.event_name == 'pull_request'
+        run: |
+          {
+            echo "### leanmt thread/batch sweep — ${{ github.sha }} (ubuntu-24.04-arm)"
+            echo ""
+            cat bench-sweep.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload sweep JSON (PR only)
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: leanmt-bench-sweep-${{ github.sha }}
+          path: |
+            bench-sweep.md
+            bench-sweep-t*-b*.json
+          if-no-files-found: error
+
+      - name: Publish sweep as PR comment (PR only)
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const sweep = fs.readFileSync('bench-sweep.md', 'utf8');
+            const body = [
+              '### leanmt thread/batch sweep (' + context.sha.slice(0, 7) + ')',
+              '',
+              'Reference arm64 runner, NEON, pinned fixture, cache disabled.',
+              'ruy intra-op threads (`--threads`) x batch (`--batch`). The',
+              'canonical default-config baseline table is the separate',
+              'benchmark comment; this sweep is how `Model::Config.threads`',
+              'defaults get chosen (NEU-23).',
+              '',
+              sweep,
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
       - name: Publish benchmark table to step summary
         run: |
           {
-            echo "### leanmt benchmark — ${{ github.sha }} (ubuntu-24.04-arm, NEON, single thread)"
+            echo "### leanmt benchmark — ${{ github.sha }} (ubuntu-24.04-arm, NEON, default ruy threads)"
             echo ""
             cat bench-table.md
             echo ""
@@ -267,7 +337,7 @@ jobs:
             const body = [
               '### leanmt benchmark (' + context.sha.slice(0, 7) + ')',
               '',
-              'Reference arm64 runner (`ubuntu-24.04-arm`), NEON, single thread,',
+              'Reference arm64 runner (`ubuntu-24.04-arm`), NEON, default ruy',
               'pinned `ende.student.tiny11` fixture (sha256-verified), translation',
               'cache disabled for the measurement.',
               '',
