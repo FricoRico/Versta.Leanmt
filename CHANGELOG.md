@@ -5,6 +5,24 @@ slimt/bergamot lineage; upstream syncs list their source commits.
 
 ## [Unreleased]
 
+### Added (NEU-50)
+
+- `leanmt-bench translate`: batch file→file translate mode on the existing
+  bench CLI binary, for the `versta.eval` quality harness — reads UTF-8
+  sentences from `--input` (one per line), writes exactly one translation
+  per line to `--output`, in order. New versioned CLI spec
+  `versta.engine-cli/1` (mirrored in Versta.Models `versta/leanmt.py` +
+  PIPELINE.md, same handshake style as NEU-25's `leanmt_binary_version`).
+  Decode settings pinnable by flags (`--threads`, `--beam`, `--batch`) and
+  echoed to stderr; cache disabled; blank input lines and embedded newlines
+  fail fast rather than corrupting line alignment; exit codes 0/1/2
+  (success / runtime failure / usage). `--version` prints engine + spec
+  versions. Determinism: bit-identical output across reruns, thread counts
+  and batch sizes (batching is row-wise identical — same property
+  `frontend_test` pins). Coverage: `bench/translate_cli_test.sh` (ctest).
+- `--target-vocab` flag in bench mode as well (two-vocabulary pairs, NEU-26
+  rule — previously hard-coded empty). No behavior change when unused.
+
 ### Sync (NEU-27, 2026Q4)
 
 - ruy submodule `c04e5e5` → `2264753` (google/ruy master, 2026-07-22).
