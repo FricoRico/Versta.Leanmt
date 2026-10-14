@@ -71,6 +71,16 @@ class ShortlistGenerator {
   const uint64_t* word_to_offset_;
   const Word* shortlist_;
 
+  // Every digit-only piece of the target vocabulary (ascending id order),
+  // collected once at load. The lexical table comes from one deterministic
+  // segmentation of the corpus while the model trained under subword
+  // sampling, so a number's alternative pieces ("404" as ▁4+04) are not
+  // guaranteed to be reachable through the table — on sparse tables numbers
+  // get dropped or doubled in the output. generate() admits all of these
+  // whenever the source contains a digit, which makes number copying a
+  // structural property instead of a property of the table's contents.
+  Words digit_targets_;
+
   struct Header {
     uint64_t magic;                // BINARY_SHORTLIST_MAGIC
     uint64_t checksum;             // hash([&frequent, eof]).

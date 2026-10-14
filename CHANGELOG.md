@@ -5,6 +5,34 @@ slimt/bergamot lineage; upstream syncs list their source commits.
 
 ## [Unreleased]
 
+### Fixed (NEU-30)
+
+- **Numbers now copy reliably through the lexical shortlist (digit
+  forcing).** The shortlist table is built from one deterministic
+  segmentation of the training corpus while the model trained under subword
+  sampling, so a number's alternative target pieces ("404" as ▁404 vs.
+  ▁4+04) are not guaranteed to be reachable through the table — on sparse
+  tables, digits get dropped or doubled in the output (prices, times,
+  addresses). `Vocabulary::is_digit_piece` classifies digit-only pieces, the
+  generator scans the target vocabulary once at load, and `generate()`
+  force-admits every digit-only target piece whenever the source carries a
+  digit — after the frequency top-up, so digit pieces never displace the
+  candidates the budget exists to supply; the multiple-of-eight vector
+  alignment is restored on top. **Output-affecting by construction (decode
+  candidates grow on digit rows); measured zero byte-drift on the pinned
+  ende-tiny11 fixture** (3-sentence golden suite + 100-sentence numeric
+  corpus, both identical before/after — the defect is latent on this
+  fixture; the fix converts an empirical property into a structural
+  guarantee and arms CI to catch a regression). Worst case shortlist grows
+  1000 → ≤ align8(1000 + |digit pieces|) (tiny11: 778 digit pieces → ≤ 1784)
+  on digit rows only; no-digit inputs are untouched. Validation: new
+  shortlist unit tests (admission completeness, alignment invariant,
+  worst-case bound, number segmentation reachability), vocabulary
+  classification tests, numeric-fidelity gate at 95% row exact-match
+  (measures 100.0% pre- and post-fix on the fixture corpus), pinned
+  goldens byte-identical. Approach informed by the reference fork
+  DavidVentura/slimt@2beb403 — implementation is ours; risk note on the PR.
+
 ### Sync (NEU-27, 2026Q4)
 
 - ruy submodule `c04e5e5` → `2264753` (google/ruy master, 2026-07-22).
