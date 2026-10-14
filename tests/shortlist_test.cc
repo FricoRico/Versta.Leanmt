@@ -110,11 +110,15 @@ TEST("digit-row shortlist stays within the documented worst-case bound") {
   // Alignment invariant, including after forcing re-aligns.
   CHECK_EQ(admitted.size() % leanmt::ShortlistGenerator::kVExtAlignment, 0u);
 
-  // Absolute worst case: the pre-forcing table (frequent band + lexical
-  // rows, topped up to min_candidates and aligned) plus at most
-  // |digit pieces| + alignment slack. The pre-forcing size is observable:
-  // generate with min_candidates=0, which leaves top-up padding only to the
-  // nearest multiple of eight.
+  // Absolute worst case: |shortlist| <= align8(max(min_candidates, S)) +
+  // 2 * alignment, where S is the pre-top-up union size (frequent band +
+  // lexical rows). S isn't directly observable; but generate(words, 0) is
+  // an observable upper bound on it (its result is that same union topped
+  // up only to the nearest multiple of eight — on this digit input it also
+  // contains the forced digit pieces, which only loosens the bound). With
+  // |digit_targets_| admissions and one re-alignment on top:
+  //
+  //   |admitted| <= align8(max(min_candidates, base)) + |digit pieces| + 8
   size_t base = g.shortlist.generate(digit_words, 0).words().size();
   size_t bound_base = std::max(base, leanmt::ShortlistGenerator::kMinCandidates);
   bound_base += leanmt::ShortlistGenerator::kVExtAlignment -

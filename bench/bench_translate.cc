@@ -173,6 +173,11 @@ struct Result {
   size_t iterations;
   double min_ms, median_ms, p95_ms, max_ms;
   long rss_start_kib, rss_end_kib;
+  // Generated target pieces per iteration (sum over the batch). Makes
+  // latency interpretable when an output-affecting change alters decode
+  // length: compare latency per generated step, not per sentence (digit
+  // rows: forcing can change how many pieces the decoder emits).
+  size_t output_tokens = 0;
 };
 
 Result run_length(leanmt::Blocking& service, const leanmt::Ptr<leanmt::Model>& model,
@@ -195,13 +200,22 @@ Result run_length(leanmt::Blocking& service, const leanmt::Ptr<leanmt::Model>& m
   long rss_start = rss_peak_kib();
   std::vector<double> timings_ms;
   timings_ms.reserve(iterations);
+  size_t output_tokens_total = 0;
   for (size_t i = 0; i < iterations; ++i) {
     auto started = std::chrono::steady_clock::now();
-    (void)service.translate(model, sentences, options);
+    auto responses = service.translate(model, sentences, options);
     auto ended = std::chrono::steady_clock::now();
     timings_ms.push_back(
         std::chrono::duration<double, std::milli>(ended - started).count());
+    for (const auto& response : responses) {
+      for (size_t s = 0; s < response.size(); ++s) {
+        output_tokens_total += response.target.annotation.word_count(s);
+      }
+    }
   }
+  // Decode is deterministic, so every iteration emits the same count;
+  // keep a per-iteration figure robust to integer division anyway.
+  const size_t output_tokens = output_tokens_total / iterations;
   long rss_end = rss_peak_kib();
 
   std::sort(timings_ms.begin(), timings_ms.end());
@@ -217,7 +231,8 @@ Result run_length(leanmt::Blocking& service, const leanmt::Ptr<leanmt::Model>& m
                 pct(0.95),
                 timings_ms.back(),
                 rss_start,
-                rss_end};
+                rss_end,
+                output_tokens};
 }
 
 std::string arch_string() {
@@ -284,12 +299,12 @@ int main(int argc, char** argv) {
       "ende.student.tiny11 int8 (pinned)");
   std::printf("model load: %.1f ms | RSS start: %ld KiB | peak after load: %ld KiB\n\n",
               load_ms, rss_baseline, rss_peak_kib());
-  std::printf("| words | batch | iters | min ms | median ms | p95 ms | max ms | RSS peak KiB |\n");
-  std::printf("|------:|------:|------:|-------:|----------:|-------:|-------:|-------------:|\n");
+  std::printf("| words | batch | iters | min ms | median ms | p95 ms | max ms | out pieces/iter | RSS peak KiB |\n");
+  std::printf("|------:|------:|------:|-------:|----------:|-------:|-------:|----------------:|-------------:|\n");
   for (const Result& r : results) {
-    std::printf("| %5zu | %5zu | %5zu | %7.3f | %10.3f | %7.3f | %7.3f | %12ld |\n",
+    std::printf("| %5zu | %5zu | %5zu | %7.3f | %10.3f | %7.3f | %7.3f | %14zu | %12ld |\n",
                 r.words, r.batch, r.iterations, r.min_ms, r.median_ms, r.p95_ms,
-                r.max_ms, r.rss_end_kib);
+                r.max_ms, r.output_tokens, r.rss_end_kib);
   }
   std::printf("\n");
 
@@ -312,6 +327,7 @@ int main(int argc, char** argv) {
            << ", \"iterations\": " << r.iterations
            << ", \"min_ms\": " << r.min_ms << ", \"median_ms\": " << r.median_ms
            << ", \"p95_ms\": " << r.p95_ms << ", \"max_ms\": " << r.max_ms
+           << ", \"output_tokens\": " << r.output_tokens
            << ", \"rss_peak_kib\": " << r.rss_end_kib << "}"
            << (i + 1 < results.size() ? "," : "") << "\n";
     }
