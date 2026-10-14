@@ -1,0 +1,16 @@
+{
+  "tool": "leanmt-bench",
+  "arch": "aarch64",
+  "threads": 2,
+  "batch": 1,
+  "model": "ende.student.tiny11 v2 (pinned sha256)",
+  "model_load_ms": 35.119,
+  "rss_start_kib": 3432,
+  "rss_after_load_kib": 101000,
+  "results": [
+    {"words": 8, "batch": 1, "iterations": 30, "min_ms": 2.15643, "median_ms": 2.1882, "p95_ms": 2.21699, "max_ms": 2.81426, "rss_peak_kib": 45368},
+    {"words": 24, "batch": 1, "iterations": 30, "min_ms": 5.02333, "median_ms": 5.06647, "p95_ms": 5.17164, "max_ms": 5.18153, "rss_peak_kib": 50884},
+    {"words": 60, "batch": 1, "iterations": 30, "min_ms": 13.9146, "median_ms": 13.9982, "p95_ms": 14.0675, "max_ms": 14.0775, "rss_peak_kib": 59428},
+    {"words": 120, "batch": 1, "iterations": 30, "min_ms": 121.543, "median_ms": 122.277, "p95_ms": 123.432, "max_ms": 123.602, "rss_peak_kib": 101000}
+  ]
+}
