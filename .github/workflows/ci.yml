@@ -368,3 +368,30 @@ jobs:
                 body,
               });
             }
+
+  # ---------------------------------------------------------------------------
+  # Single stable check name for branch protection on main. Required checks
+  # are matched by exact job name; the android-build legs embed ABI/NDK matrix
+  # values, so any matrix edit would silently rename those checks and un-gate
+  # main. Require only this aggregate; it covers every leg above.
+  # `if: always()` so a failed leg fails the gate instead of skipping it.
+  # ---------------------------------------------------------------------------
+  ci-gate:
+    name: ci-gate
+    needs: [android-build, host-test, arm64-test-bench]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify every required leg succeeded
+        run: |
+          echo '${{ toJSON(needs) }}' | python3 -c '
+          import json, sys
+          needs = json.load(sys.stdin)
+          bad = {name: leg["result"] for name, leg in needs.items() if leg["result"] != "success"}
+          if bad:
+              for name, result in sorted(bad.items()):
+                  print(f"::error::{name}: {result}")
+              sys.exit(1)
+          print("All required legs green:", ", ".join(sorted(needs)))
+          '
