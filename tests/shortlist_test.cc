@@ -1,9 +1,11 @@
 // Unit tests for the lexical shortlist generator: digit forcing (NEU-30) —
-// when the source carries a digit, every digit-only target piece must be
-// admitted so numbers stay copyable regardless of what segmentations the
-// precomputed lexical table happens to contain. Also pins the invariants
-// that must survive it: no-digit inputs see no change, the vector-extension
-// alignment multiple holds, and the digit-row size growth stays bounded.
+// when the source carries a digit, the most frequent digit-only target
+// pieces (up to kDigitAdmissionCap; enough to always cover every 1- and
+// 2-digit chunk) must be admitted so numbers stay copyable regardless of
+// what segmentations the precomputed lexical table happens to contain.
+// Also pins the invariants that must survive it: no-digit inputs see no
+// change, the vector-extension alignment multiple holds, and the digit-row
+// size growth stays bounded.
 
 #include <algorithm>
 #include <cstdio>
