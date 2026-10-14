@@ -1,15 +1,16 @@
 {
   "tool": "leanmt-bench",
   "arch": "aarch64",
-  "workers": 1,
+  "threads": 2,
+  "batch": 1,
   "model": "ende.student.tiny11 v2 (pinned sha256)",
-  "model_load_ms": 50.1679,
+  "model_load_ms": 36.2358,
   "rss_start_kib": 3440,
-  "rss_after_load_kib": 141084,
+  "rss_after_load_kib": 101184,
   "results": [
-    {"words": 8, "iterations": 30, "min_ms": 2.60919, "median_ms": 2.64931, "p95_ms": 2.73401, "max_ms": 2.73914, "rss_peak_kib": 87672},
-    {"words": 24, "iterations": 30, "min_ms": 6.01687, "median_ms": 6.06524, "p95_ms": 6.13294, "max_ms": 6.1338, "rss_peak_kib": 91228},
-    {"words": 60, "iterations": 30, "min_ms": 16.1718, "median_ms": 16.3596, "p95_ms": 16.5162, "max_ms": 16.5266, "rss_peak_kib": 99424},
-    {"words": 120, "iterations": 30, "min_ms": 124.827, "median_ms": 125.626, "p95_ms": 126.483, "max_ms": 127.091, "rss_peak_kib": 141084}
+    {"words": 8, "batch": 1, "iterations": 30, "min_ms": 2.19709, "median_ms": 2.2245, "p95_ms": 2.26227, "max_ms": 2.34562, "rss_peak_kib": 45380},
+    {"words": 24, "batch": 1, "iterations": 30, "min_ms": 5.11944, "median_ms": 5.15711, "p95_ms": 5.20956, "max_ms": 5.21532, "rss_peak_kib": 50896},
+    {"words": 60, "batch": 1, "iterations": 30, "min_ms": 14.0407, "median_ms": 14.1734, "p95_ms": 14.2795, "max_ms": 14.3375, "rss_peak_kib": 59440},
+    {"words": 120, "batch": 1, "iterations": 30, "min_ms": 122.188, "median_ms": 123.487, "p95_ms": 124.136, "max_ms": 124.158, "rss_peak_kib": 101184}
   ]
 }
