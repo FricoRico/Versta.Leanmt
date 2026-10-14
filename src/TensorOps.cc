@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <string>
 
+#include "Io.hh"
 #include "Simd.hh"
 #include "Tensor.hh"
 #include "ruy/ruy.h"
@@ -29,15 +30,33 @@ Tensor index_select(const Tensor& x, const Tensor& indices,
   uint64_t x_cols = x.dim(-1);
   uint64_t x_rows = x.dim(-2);
 
-  // index_select... really, rows_select
+  // index_select... really, rows_select. The output is always f32: for an
+  // int8-quantized source (all embedding tables since the loader stopped
+  // materializing them — NEU-23) the gathered rows are dequantized on the
+  // fly with the table's trailing multiplier, bit-exact with the f32 copy
+  // the old loader produced.
   Shape selected_shape = Shape({batch_size, sequence_length, x_cols});
-  Tensor selected(x.type(), selected_shape, name);
+  Tensor selected(Type::f32, selected_shape, name);
 
-  const auto* x_ptr = x.data<float>();
   auto* selected_ptr = selected.data<float>();
   const auto* indices_ptr = indices.data<int>();
-  index_select(x_ptr, indices_ptr, batch_size, sequence_length, x_cols, x_rows,
-               selected_ptr);
+  if (x.type() == Type::i8) {
+    const auto* source = x.data<int8_t>();
+    float quantization_multiplier = x.quantization_multiplier();
+    for (uint64_t batch_id = 0; batch_id < batch_size; batch_id++) {
+      for (uint64_t token_id = 0; token_id < sequence_length; token_id++) {
+        uint64_t token = indices_ptr[batch_id * sequence_length + token_id];
+        const int8_t* embedding = source + token * x_cols;
+        float* target =
+            selected_ptr + (batch_id * sequence_length + token_id) * x_cols;
+        io::unquantize_embedding_weights(embedding, quantization_multiplier,
+                                         x_cols, target);
+      }
+    }
+  } else {
+    index_select(x.data<float>(), indices_ptr, batch_size, sequence_length,
+                 x_cols, x_rows, selected_ptr);
+  }
   return selected;
 }
 

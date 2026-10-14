@@ -47,6 +47,13 @@ class Model {
     size_t decoder_layers = 2;
     size_t feed_forward_depth = 2;
     size_t num_heads = 8;
+    // Intra-op GEMM thread budget forwarded to qmm::set_num_threads() when
+    // nonzero. 0 keeps the process default (1, or LEANMT_THREADS). Applies
+    // to the calling thread immediately and process-wide for any worker
+    // thread on first use; see QMM.hh for the exact ownership/threading
+    // contract. Output is bit-identical at any thread count (ruy splits
+    // rows/columns, never the reduction).
+    size_t threads = 0;
     // NOLINTEND
   };
 

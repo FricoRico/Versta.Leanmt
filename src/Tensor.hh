@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <iterator>
 #include <ostream>
 #include <string>
@@ -125,6 +126,18 @@ class Tensor {
   template <class Scalar>
   void fill_in_place(Scalar value) {
     std::fill(data<Scalar>(), data<Scalar>() + size(), value);
+  }
+
+  // The f32 quantization multiplier stored after the element payload of an
+  // i8/ig8 weight tensor (the leanmt/marian tail convention: `elements`
+  // values of storage followed by one f32). Undefined behaviour to call on
+  // anything else; every i8 tensor the loader produces carries it (both the
+  // mmap views and the heap copies), as does Wemb's new int8 storage.
+  float quantization_multiplier() const {
+    const char *end = data<char>() + size_in_bytes(type_) * shape().elements();
+    float value;
+    std::memcpy(&value, end, sizeof(float));
+    return value;
   }
 
   bool standalone() const { return aligned_.data() != nullptr; }

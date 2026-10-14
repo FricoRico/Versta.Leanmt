@@ -102,6 +102,40 @@ TEST("translate handles a batch preserving order and one response per input") {
   CHECK_EQ(responses[0].target.text, "Hallo Welt, das ist ein kleiner Test.");
 }
 
+TEST("batched translation is row-wise identical to single translations") {
+  REQUIRE_FIXTURE();
+  auto model = load_model();
+  leanmt::Options options;
+
+  // Six rows: past the NEON gemv row limit, so on aarch64 the batch's GEMMs
+  // leave the single-row sdot path and go through ruy. Either way, each
+  // sentence's output must equal its single-translate result exactly: batch
+  // composition must not change a sentence's decode.
+  std::vector<std::string> batch = {
+      "Hello world, this is a small test.",
+      "The menu is not available in English.",
+      "Where is the central station?",
+      "I would like to pay by card, please.",
+      "Does this train stop at the harbour?",
+      "My hotel reservation starts tomorrow.",
+  };
+
+  leanmt::Blocking singles_service(leanmt::Config{});
+  std::vector<std::string> singles;
+  for (const auto& sentence : batch) {
+    auto r = singles_service.translate(model, {sentence}, options);
+    REQUIRE(r.size() == 1u);
+    singles.push_back(r[0].target.text);
+  }
+
+  leanmt::Blocking batch_service(leanmt::Config{});
+  auto responses = batch_service.translate(model, batch, options);
+  REQUIRE(responses.size() == batch.size());
+  for (size_t i = 0; i < batch.size(); ++i) {
+    CHECK_EQ(responses[i].target.text, singles[i]);
+  }
+}
+
 TEST("alignments, when requested, are well-formed") {
   REQUIRE_FIXTURE();
   auto model = load_model();

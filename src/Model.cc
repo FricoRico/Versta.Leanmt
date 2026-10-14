@@ -75,7 +75,11 @@ Model::Model(const Config &config, const Package<View> &package)
       transformer_(config.encoder_layers, config.decoder_layers,
                    config.num_heads, config.feed_forward_depth, package.model),
       shortlist_generator_(make_shortlist_generator(
-          package.shortlist, src_vocabulary_, target_vocabulary())) {}
+          package.shortlist, src_vocabulary_, target_vocabulary())) {
+  if (config.threads > 0) {
+    qmm::set_num_threads(config.threads);
+  }
+}
 
 Model::Model(const Config &config, const Package<std::string> &package)
     : id_(model_id++),
@@ -88,7 +92,11 @@ Model::Model(const Config &config, const Package<std::string> &package)
       transformer_(config.encoder_layers, config.decoder_layers,
                    config.num_heads, config.feed_forward_depth, view_.model),
       shortlist_generator_(make_shortlist_generator(
-          view_.shortlist, src_vocabulary_, target_vocabulary())) {}
+          view_.shortlist, src_vocabulary_, target_vocabulary())) {
+  if (config.threads > 0) {
+    qmm::set_num_threads(config.threads);
+  }
+}
 
 std::optional<ShortlistGenerator> Model::make_shortlist_generator(
     View view, const Vocabulary &source, const Vocabulary &target) {

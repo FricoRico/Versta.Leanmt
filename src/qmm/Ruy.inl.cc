@@ -1,6 +1,9 @@
 #include "ruy/ruy.h"
 
+#include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 
 #if defined(__aarch64__)
@@ -16,15 +19,63 @@ namespace leanmt::qmm::detail {
 using Index = uint64_t;
 
 namespace {
+
+// Process-wide default for the maximum thread count of the per-thread ruy
+// contexts below. Seed from LEANMT_THREADS (bench/CI/dev knob); the library
+// code path to change it deliberately is leanmt::qmm::set_num_threads
+// (exposed through Model::Config::threads). Ruy never splits the reduction
+// (K) dimension, so any thread count yields identical int32 accumulators.
+//
+// Default 2 (NEU-23, reference-arm64 sweep evidence in PR #6): consistent
+// double-digit wins at 8..60 words across batch 1/4/8 vs 1 thread (e.g.
+// 60-word single translate 16.3 -> 14.1 ms median), no small-input
+// regression, negligible RSS. 4 threads regresses batched long inputs on a
+// 4-core box (oversubscription: 120-word batch-4 400 -> 885 ms), so the cap
+// stays conservative; on the Pixel-6a-class big.LITTLE target 2 maps to the
+// two prime cores. Devices wanting more set LEANMT_THREADS or
+// Model::Config::threads deliberately.
+int env_num_threads() {
+  const char* env = std::getenv("LEANMT_THREADS");
+  if (env == nullptr || env[0] == '\0') {
+    return 2;
+  }
+  int value = std::atoi(env);
+  return value > 0 ? value : 1;
+}
+
+std::atomic<int>& shared_max_threads() {
+  static std::atomic<int> value(env_num_threads());
+  return value;
+}
+
+void apply_max_threads(ruy::Context& context) {
+  context.set_max_num_threads(shared_max_threads().load(std::memory_order_relaxed));
+}
+
 ruy::Context& thread_context() {
   thread_local ruy::Context context;
+  thread_local const bool configured = [](ruy::Context& ctx) {
+    apply_max_threads(ctx);
+    return true;
+  }(context);
+  (void)configured;  // one-time application at first use of this thread
   return context;
 }
 
 ruy::Context& standalone_thread_context() {
   thread_local ruy::Context context;
+  thread_local const bool configured = [](ruy::Context& ctx) {
+    apply_max_threads(ctx);
+    return true;
+  }(context);
+  (void)configured;  // one-time application at first use of this thread
   return context;
 }
+
+// Ruy spins its pool workers for a few ms after each Mul before parking them
+// (see ruy::ThreadPool::set_spin_milliseconds); that is what we want for
+// back-to-back decode steps — a worker per step boundary otherwise pays a
+// futex wake on every step.
 
 #if defined(__aarch64__)
 // Ruy's int8 kernel computes an 8-row block regardless of m, so a 1-row
@@ -478,5 +529,20 @@ void clear_standalone_pack_cache() {
 void clear_all_pack_caches() {
   standalone_thread_context().ClearPrepackedCache();
   thread_context().ClearPrepackedCache();
+}
+
+void set_num_threads(size_t threads) {
+  int clamped = static_cast<int>(std::max<size_t>(1, std::min<size_t>(threads, 64)));
+  shared_max_threads().store(clamped, std::memory_order_relaxed);
+  // Apply to this thread's contexts too (they may already exist); other
+  // threads pick the new default up at first use. leanmt translates on the
+  // caller's thread (Blocking) or worker threads that construct their
+  // contexts lazily (Async), so setting this at startup covers everything.
+  apply_max_threads(thread_context());
+  apply_max_threads(standalone_thread_context());
+}
+
+size_t num_threads() {
+  return static_cast<size_t>(shared_max_threads().load(std::memory_order_relaxed));
 }
 }  // namespace leanmt::qmm::detail

@@ -71,4 +71,8 @@ void clear_standalone_pack_cache() { detail::clear_standalone_pack_cache(); }
 
 void clear_all_pack_caches() { detail::clear_all_pack_caches(); }
 
+void set_num_threads(size_t threads) { detail::set_num_threads(threads); }
+
+size_t num_threads() { return detail::num_threads(); }
+
 }  // namespace leanmt::qmm
