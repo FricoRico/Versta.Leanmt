@@ -64,11 +64,6 @@ ruy::Context& standalone_thread_context() {
   return context;
 }
 
-// Ruy spins its pool workers for a few ms after each Mul before parking them
-// (see ruy::ThreadPool::set_spin_milliseconds); that is what we want for
-// back-to-back decode steps — a worker per step boundary otherwise pays a
-// futex wake on every step.
-
 #if defined(__aarch64__)
 // Ruy's int8 kernel computes an 8-row block regardless of m, so a 1-row
 // multiply (the per-request output projection during decode: requests are
@@ -126,20 +121,115 @@ __attribute__((target("+dotprod"))) void gemv_i8_dotprod(
     out[j] = sum;
   }
 }
+// Two rows at a time: W column loads are shared across the row pair and the
+// inner loop runs 8 independent sdot accumulator chains (2 rows x 4 columns).
+// Same per-row k-chunking (16) and scalar tail as the single-row kernel, so
+// each row's int32 output is bit-identical to gemv_i8_dotprod's.
+__attribute__((target("+dotprod"))) void gemv_i8_dotprod_2row(
+    const int8_t* a0, const int8_t* a1, const int8_t* W, Index width,
+    Index cols, int32_t* out0, int32_t* out1) {
+  Index j = 0;
+  for (; j + 4 <= cols; j += 4) {
+    const int8_t* c0 = W + (j + 0) * width;
+    const int8_t* c1 = W + (j + 1) * width;
+    const int8_t* c2 = W + (j + 2) * width;
+    const int8_t* c3 = W + (j + 3) * width;
+    int32x4_t acc00 = vdupq_n_s32(0);
+    int32x4_t acc01 = vdupq_n_s32(0);
+    int32x4_t acc02 = vdupq_n_s32(0);
+    int32x4_t acc03 = vdupq_n_s32(0);
+    int32x4_t acc10 = vdupq_n_s32(0);
+    int32x4_t acc11 = vdupq_n_s32(0);
+    int32x4_t acc12 = vdupq_n_s32(0);
+    int32x4_t acc13 = vdupq_n_s32(0);
+    Index k = 0;
+    for (; k + 16 <= width; k += 16) {
+      int8x16_t x0 = vld1q_s8(a0 + k);
+      int8x16_t x1 = vld1q_s8(a1 + k);
+      int8x16_t w0 = vld1q_s8(c0 + k);
+      acc00 = vdotq_s32(acc00, x0, w0);
+      acc10 = vdotq_s32(acc10, x1, w0);
+      int8x16_t w1 = vld1q_s8(c1 + k);
+      acc01 = vdotq_s32(acc01, x0, w1);
+      acc11 = vdotq_s32(acc11, x1, w1);
+      int8x16_t w2 = vld1q_s8(c2 + k);
+      acc02 = vdotq_s32(acc02, x0, w2);
+      acc12 = vdotq_s32(acc12, x1, w2);
+      int8x16_t w3 = vld1q_s8(c3 + k);
+      acc03 = vdotq_s32(acc03, x0, w3);
+      acc13 = vdotq_s32(acc13, x1, w3);
+    }
+    int32x4_t sums0 =
+        vpaddq_s32(vpaddq_s32(acc00, acc01), vpaddq_s32(acc02, acc03));
+    int32x4_t sums1 =
+        vpaddq_s32(vpaddq_s32(acc10, acc11), vpaddq_s32(acc12, acc13));
+    for (; k < width; ++k) {
+      int32_t lane[4] = {c0[k], c1[k], c2[k], c3[k]};
+      sums0 = vaddq_s32(sums0, vmulq_n_s32(vld1q_s32(lane), a0[k]));
+      sums1 = vaddq_s32(sums1, vmulq_n_s32(vld1q_s32(lane), a1[k]));
+    }
+    vst1q_s32(out0 + j, sums0);
+    vst1q_s32(out1 + j, sums1);
+  }
+  for (; j < cols; ++j) {
+    const int8_t* column = W + j * width;
+    int32x4_t acc0 = vdupq_n_s32(0);
+    int32x4_t acc1 = vdupq_n_s32(0);
+    Index k = 0;
+    for (; k + 16 <= width; k += 16) {
+      acc0 = vdotq_s32(acc0, vld1q_s8(a0 + k), vld1q_s8(column + k));
+      acc1 = vdotq_s32(acc1, vld1q_s8(a1 + k), vld1q_s8(column + k));
+    }
+    int32_t sum0 = vaddvq_s32(acc0);
+    int32_t sum1 = vaddvq_s32(acc1);
+    for (; k < width; ++k) {
+      sum0 += a0[k] * column[k];
+      sum1 += a1[k] * column[k];
+    }
+    out0[j] = sum0;
+    out1[j] = sum1;
+  }
+}
 #endif
 
 // Threshold under which the row-at-a-time gemv beats ruy's padded 8-row
 // kernel (8-row block cost is flat in m, gemv cost is linear; crossover
 // is below 8 because ruy's kernel is better software-pipelined).
-constexpr Index kGemvRowLimit = 4;
+// NEU-23: LEANMT_GEMV_ROW_LIMIT=n (default 4, max 8) lifts the limit for
+// measurement sweeps; rows in 5..n take the 2-row kernel. The shipped
+// default is decided from the reference-arm64 CI sweep, not by feel.
+Index gemv_row_limit() {
+  static const Index limit = [] {
+    const char* env = std::getenv("LEANMT_GEMV_ROW_LIMIT");
+    if (env == nullptr || env[0] == '\0') {
+      return Index{4};
+    }
+    int value = std::atoi(env);
+    return Index{static_cast<uint64_t>(std::max(4, std::min(value, 8)))};
+  }();
+  return limit;
+}
 
 bool gemv(const int8_t* A, const int8_t* W, Index rows, Index width,
           Index cols, int32_t* out) {
 #if defined(__aarch64__)
-  if (rows > kGemvRowLimit || !dotprod_available()) {
+  Index limit = gemv_row_limit();
+  if (rows > limit || !dotprod_available()) {
     return false;
   }
-  for (Index r = 0; r < rows; ++r) {
+  if (rows <= 4) {
+    for (Index r = 0; r < rows; ++r) {
+      gemv_i8_dotprod(A + r * width, W, width, cols, out + r * cols);
+    }
+    return true;
+  }
+  // 5..limit rows: pairwise 2-row kernel, odd row falls to the single-row one.
+  Index r = 0;
+  for (; r + 2 <= rows; r += 2) {
+    gemv_i8_dotprod_2row(A + r * width, A + (r + 1) * width, W, width, cols,
+                         out + r * cols, out + (r + 1) * cols);
+  }
+  if (r < rows) {
     gemv_i8_dotprod(A + r * width, W, width, cols, out + r * cols);
   }
   return true;
@@ -530,6 +620,11 @@ void set_num_threads(size_t threads) {
   // threads pick the new default up at first use. leanmt translates on the
   // caller's thread (Blocking) or worker threads that construct their
   // contexts lazily (Async), so setting this at startup covers everything.
+  //
+  // Ruy spins its pool workers for a few ms after each Mul before parking
+  // them (ruy::ThreadPool::set_spin_milliseconds) — which is what we want
+  // for back-to-back decode steps; a parked-then-woken worker would pay a
+  // futex wake on every step boundary.
   apply_max_threads(thread_context());
   apply_max_threads(standalone_thread_context());
 }

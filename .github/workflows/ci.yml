@@ -247,6 +247,22 @@ jobs:
               echo "$J" >> bench-sweep-files.txt
             done
           done
+          # gemv-coverage A/B at batch 8, single thread: default row limit (4,
+          # ruy handles 5..8 rows) vs LEANMT_GEMV_ROW_LIMIT=8 (2-row sdot
+          # kernel covers 5..8). Decides the shipped limit.
+          for L in 4 8; do
+            J="bench-sweep-gemv${L}-t1-b8.json"
+            echo "" >> bench-sweep.md
+            echo "gemv A/B: LEANMT_GEMV_ROW_LIMIT=$L, threads=1, batch=8" >> bench-sweep.md
+            LEANMT_GEMV_ROW_LIMIT=$L ./build/bench/leanmt-bench \
+              --model "$F/model.intgemm.alphas.bin" \
+              --vocab "$F/vocab.deen.spm" \
+              --shortlist "$F/lex.s2t.bin" \
+              --iterations 25 --warmup 5 \
+              --threads 1 --batch 8 \
+              --json "$J" | sed '1d' >> bench-sweep.md
+            echo "$J" >> bench-sweep-files.txt
+          done
 
       - name: Publish sweep to step summary (PR only)
         if: github.event_name == 'pull_request'
