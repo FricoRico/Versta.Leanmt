@@ -7,7 +7,9 @@ the perf-tuning follow-up; today the tables are published for review).
 ## Files
 
 - `arm64.json` — reference baseline from the `ubuntu-24.04-arm` GitHub runner
-  (aarch64, NEON, single thread, Release build).
+  (aarch64, NEON, Release build at the repo's default ruy thread budget; 1
+  thread until NEU-23's flip, 2 threads after — the refresh commit names the
+  change).
 
 ## Contract (do not hand-edit numbers)
 

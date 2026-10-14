@@ -222,12 +222,10 @@ jobs:
           test -s bench-table.md
 
       # NEU-23 tuning instrument: ruy intra-op thread-pool sizing and batched
-      # decode. Runs only on PRs (push builds keep the fast single canonical
-      # bench above, which stays 1-thread batch-1 for baseline comparability).
-      # batch 4 sits exactly at the gemv row limit (kGemvRowLimit = 4);
-      # batch 8 is the that-limit evidence for extending NEON gemv coverage
-      # into 5..8-row territory. The sweep informs Model::Config.threads and
-      # gemv coverage decisions; it does not gate.
+      # decode. Runs only on PRs; push builds keep the single canonical bench
+      # above (batch 1 at the shipped default thread count) so its published
+      # numbers stay regression-comparable across merges. The sweep informs
+      # Model::Config.threads and gemv coverage decisions; it does not gate.
       - name: Benchmark thread/batch sweep (PR only)
         if: github.event_name == 'pull_request'
         run: |
@@ -280,7 +278,7 @@ jobs:
               '',
               'Reference arm64 runner, NEON, pinned fixture, cache disabled.',
               'ruy intra-op threads (`--threads`) x batch (`--batch`). The',
-              'canonical 1-thread/batch-1 baseline table is the separate',
+              'canonical default-config baseline table is the separate',
               'benchmark comment; this sweep is how `Model::Config.threads`',
               'defaults get chosen (NEU-23).',
               '',
@@ -296,7 +294,7 @@ jobs:
       - name: Publish benchmark table to step summary
         run: |
           {
-            echo "### leanmt benchmark — ${{ github.sha }} (ubuntu-24.04-arm, NEON, single thread)"
+            echo "### leanmt benchmark — ${{ github.sha }} (ubuntu-24.04-arm, NEON, default ruy threads)"
             echo ""
             cat bench-table.md
             echo ""
@@ -339,7 +337,7 @@ jobs:
             const body = [
               '### leanmt benchmark (' + context.sha.slice(0, 7) + ')',
               '',
-              'Reference arm64 runner (`ubuntu-24.04-arm`), NEON, single thread,',
+              'Reference arm64 runner (`ubuntu-24.04-arm`), NEON, default ruy',
               'pinned `ende.student.tiny11` fixture (sha256-verified), translation',
               'cache disabled for the measurement.',
               '',
