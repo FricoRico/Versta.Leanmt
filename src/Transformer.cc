@@ -296,6 +296,10 @@ void Transformer::load_parameters() {
       // a reference to `decoder_embedding_`; mirror the encoder copy into it
       // below.
       if (item.name == "Wemb") loaded_shared_wemb = true;
+      // Two-vocab models (en-ja, en-zh, ...) populate `decoder_embedding_`
+      // directly from `decoder_Wemb`; record that so Model can enforce that
+      // a separate target vocabulary was supplied.
+      if (item.name == "decoder_Wemb") two_vocab_embeddings_ = true;
       parameters.erase(item.name);
     } else {
       missed.push_back(item.name);

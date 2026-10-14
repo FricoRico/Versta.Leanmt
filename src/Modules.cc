@@ -33,13 +33,13 @@ namespace {
 //
 // Ruy's i8 quantize clips activations to ±127. The bergamot calibration
 // pipeline normally bakes a per-tensor alpha into the model file
-// (`*_QuantMultA`) so that `alpha * max|x| ≤ 127`. Two-vocab models
-// (en-ja, en-ko, en-zh, ...) ship no such alpha for the decoder output
-// projection — `decoder_Wemb_QuantMultA` is an empty placeholder and
-// `none_QuantMultA` is absent. Io.cc drops the placeholder name on load
-// so `Affine::quant` for those models comes back unloaded; we detect
-// that here and compute alpha dynamically from `max|x|`. Matches
-// marian-decoder's runtime behavior on the same files.
+// (`*_QuantMultA`) so that `alpha * max|x| ≤ 127`. Shared-vocab models
+// carry `none_QuantMultA`; current two-vocab models (en-ja v2.3, en-zh, ...)
+// instead ship `decoder_Wemb_QuantMultA` as an ig8 [1,1] marker
+// (int8=127 + f32 quantMult) which Io.cc materializes into the real f32
+// alpha. Only when neither is present does `Affine::quant` come back
+// unloaded; we detect that here and compute alpha dynamically from
+// `max|x|`, matching marian-decoder's runtime behavior on such files.
 float a_quant_for(const Affine &parameters, const Tensor &x) {
   if (parameters.quant.loaded()) {
     return parameters.quant.item<float>();
@@ -356,11 +356,11 @@ SelectedAffine prepare_selected(const Affine &parameters,
     dst[i] = src[indices[i]];
   }
 
-  // Capture 0 as the "no calibrated alpha, use dynamic" sentinel; the file
-  // ships an empty `decoder_Wemb_QuantMultA` placeholder for two-vocab
-  // models, which Io.cc drops on load (see Tensor::loaded). We can't read
-  // a calibrated value here, but we don't have an `x` to compute dynamic
-  // either — defer that to `affine_with_selected`.
+  // Capture 0 as the "no calibrated alpha, use dynamic" sentinel. On current
+  // two-vocab models Io.cc materializes `decoder_Wemb_QuantMultA` into the
+  // real f32 alpha, so `quant` is loaded here; the sentinel only survives on
+  // files that ship neither it nor `none_QuantMultA`. We can't compute the
+  // dynamic value here (no `x` yet) — defer that to `affine_with_selected`.
   float a_quant =
       parameters.quant.loaded() ? parameters.quant.item<float>() : 0.0F;
 

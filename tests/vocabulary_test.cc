@@ -26,6 +26,23 @@ bool fixture_available() {
     return;                                                        \
   }
 
+std::string vocab_2v_path(const std::string& file) {
+  return leanmt::test::fixture_2v_dir() + "/" + file;
+}
+
+bool fixture_2v_available() {
+  struct stat st;
+  return ::stat(vocab_2v_path("srcvocab.enja.spm").c_str(), &st) == 0 &&
+         ::stat(vocab_2v_path("trgvocab.enja.spm").c_str(), &st) == 0;
+}
+
+#define REQUIRE_FIXTURE_2V()                                       \
+  if (!fixture_2v_available()) {                                   \
+    std::cout << "    skip: two-vocab fixtures not present (run "  \
+                 "tests/fixtures/download-fixtures.sh)\n";         \
+    return;                                                        \
+  }
+
 }  // namespace
 
 TEST("vocabulary loads and tokenizes deterministically") {
@@ -68,6 +85,31 @@ TEST("word boundary helpers classify sentencepiece pieces") {
   // Out-of-range lookups degrade gracefully instead of reading past tables.
   CHECK(!vocab.is_word_start(vocab.size() + 7));
   CHECK(vocab.ends_word(vocab.size() + 7));
+}
+
+TEST("two-vocab fixture ships genuinely distinct source/target vocabularies") {
+  REQUIRE_FIXTURE_2V();
+  leanmt::Vocabulary src(vocab_2v_path("srcvocab.enja.spm"));
+  leanmt::Vocabulary trg(vocab_2v_path("trgvocab.enja.spm"));
+  CHECK_EQ(src.size(), 32000u);
+  CHECK_EQ(trg.size(), 32000u);
+
+  // Same input, different ids: guards against the app accidentally wiring
+  // srcvocab.spm into both package slots (which would otherwise only surface
+  // as garbage Japanese output).
+  const std::string line = "Where is the central station?";
+  auto [src_words, src_views] = src.encode(line, true);
+  auto [trg_words, trg_views] = trg.encode(line, true);
+  CHECK(src_words.size() > 2);
+  CHECK(trg_words.size() > 2);
+  CHECK(!(src_words == trg_words));
+
+  // The target (Japanese) model detokenizes Japanese script; the source
+  // (English) model doesn't. This is the property decode relies on.
+  auto [words, views] = trg.encode("東京駅はどこですか。", false);
+  std::string decoded;
+  trg.decode(words, decoded, false);
+  CHECK(decoded.find("東京") != std::string::npos);
 }
 
 int main() { return leanmt::test::run_all(); }

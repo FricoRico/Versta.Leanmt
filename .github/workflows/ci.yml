@@ -120,14 +120,14 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Cache model fixture
+      - name: Cache model fixtures
         id: fixture-cache
         uses: actions/cache@v4
         with:
           path: tests/fixtures/models
-          key: leanmt-fixture-ende-tiny11-v2-93821e13b3c511b5
+          key: leanmt-fixtures-ende-tiny11-v2-93821e13b3c511b5-enja-v2.3-59ae659f9bb63e4f
 
-      - name: Download fixture model (pinned sha256)
+      - name: Download fixture models (pinned sha256)
         run: tests/fixtures/download-fixtures.sh
 
       - name: Configure
@@ -172,13 +172,13 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Cache model fixture
+      - name: Cache model fixtures
         uses: actions/cache@v4
         with:
           path: tests/fixtures/models
-          key: leanmt-fixture-ende-tiny11-v2-93821e13b3c511b5
+          key: leanmt-fixtures-ende-tiny11-v2-93821e13b3c511b5-enja-v2.3-59ae659f9bb63e4f
 
-      - name: Download fixture model (pinned sha256)
+      - name: Download fixture models (pinned sha256)
         run: tests/fixtures/download-fixtures.sh
 
       - name: Configure

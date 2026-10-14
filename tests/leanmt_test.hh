@@ -38,7 +38,7 @@ struct Registrar {
   }
 };
 
-// Directory containing the downloaded ray of test fixtures
+// Directory containing the downloaded array of test fixtures
 // (ende.student.tiny11 model/vocab/shortlist). Set LEANMT_FIXTURES to
 // override; falls back to the in-tree default baked in by CMake.
 inline std::string fixture_dir() {
@@ -47,6 +47,17 @@ inline std::string fixture_dir() {
     return env;
   }
   return LEANMT_FIXTURE_DEFAULT_DIR;
+}
+
+// Directory containing the two-vocabulary fixture (enja.base.v2.3:
+// srcvocab/trgvocab.enja.spm + model with encoder_Wemb/decoder_Wemb).
+// Set LEANMT_FIXTURES_2V to override.
+inline std::string fixture_2v_dir() {
+  const char* env = std::getenv("LEANMT_FIXTURES_2V");
+  if (env != nullptr && env[0] != '\0') {
+    return env;
+  }
+  return LEANMT_FIXTURE_2V_DEFAULT_DIR;
 }
 
 inline void check(bool ok, const char* expr, const char* file, int line,
@@ -84,6 +95,15 @@ inline void check_eq(const A& a, const B& b, const char* ea, const char* eb,
   detail << str(a) << " vs " << str(b);
   check(ok, (std::string(ea) + " == " + std::string(eb)).c_str(), file, line,
         detail.str());
+}
+
+inline void check_close(double a, double b, double eps, const char* ea,
+                        const char* eb, const char* file, int line) {
+  std::ostringstream detail;
+  detail << str(a) << " vs " << str(b) << " (eps " << str(eps) << ")";
+  check(std::fabs(a - b) <= eps,
+        (std::string("fabs(") + ea + " - " + eb + ") <= eps").c_str(), file,
+        line, detail.str());
 }
 
 inline void check_throws(const std::function<void()>& fn,
@@ -146,7 +166,17 @@ inline int run_all() {
   static void LEANMT_TEST_CAT(leanmt_test_fn_, __LINE__)()
 
 #define CHECK(cond) ::leanmt::test::check(static_cast<bool>(cond), #cond, __FILE__, __LINE__)
+// Like CHECK, but aborts the test case on failure. Use when subsequent checks
+// would dereference nullptr / read out of bounds otherwise.
+#define REQUIRE(cond)                                              \
+  do {                                                             \
+    bool ok = static_cast<bool>(cond);                             \
+    ::leanmt::test::check(ok, #cond, __FILE__, __LINE__);         \
+    if (!ok) return;                                               \
+  } while (0)
 #define CHECK_EQ(a, b) ::leanmt::test::check_eq((a), (b), #a, #b, __FILE__, __LINE__)
+#define CHECK_CLOSE(a, b, eps) \
+  ::leanmt::test::check_close((a), (b), (eps), #a, #b, __FILE__, __LINE__)
 #define CHECK_THROWS(expr, substr)                                      \
   ::leanmt::test::check_throws([&] { (void)(expr); }, substr, #expr,    \
                                __FILE__, __LINE__)

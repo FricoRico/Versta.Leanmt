@@ -41,6 +41,47 @@ leanmt::Ptr<leanmt::Model> load_model() {
   return std::make_shared<leanmt::Model>(leanmt::Model::Config{}, files);
 }
 
+std::string fixture_2v(const std::string& file) {
+  return leanmt::test::fixture_2v_dir() + "/" + file;
+}
+
+bool fixture_2v_available() {
+  struct stat st;
+  return ::stat(fixture_2v("model.enja.intgemm.alphas.bin").c_str(), &st) ==
+         0;
+}
+
+#define REQUIRE_FIXTURE_2V()                                       \
+  if (!fixture_2v_available()) {                                   \
+    std::cout << "    skip: two-vocab fixtures not present (run "  \
+                 "tests/fixtures/download-fixtures.sh)\n";         \
+    return;                                                        \
+  }
+
+// en-ja v2.3 (Firefox remote-settings): 6 encoder / 4 decoder layers, 8
+// heads, ffn depth 2 per the embedded model.yml.
+leanmt::Model::Config enja_config() {
+  leanmt::Model::Config config;
+  config.encoder_layers = 6;
+  config.decoder_layers = 4;
+  config.feed_forward_depth = 2;
+  config.num_heads = 8;
+  return config;
+}
+
+leanmt::Ptr<leanmt::Model> load_enja_model() {
+  leanmt::Package<std::string> files{
+      .model = fixture_2v("model.enja.intgemm.alphas.bin"),
+      .vocabulary = fixture_2v("srcvocab.enja.spm"),
+      .target_vocabulary = fixture_2v("trgvocab.enja.spm"),
+      .shortlist = fixture_2v("lex.50.50.enja.s2t.bin"),
+  };
+  return std::make_shared<leanmt::Model>(enja_config(), files);
+}
+
+// Sentence used for the two-vocab golden + determinism checks.
+constexpr const char* kEnjaInput = "Hello world, this is a small test.";
+
 }  // namespace
 
 TEST("translate is deterministic across repeated runs") {
@@ -154,6 +195,76 @@ TEST("translation stays correct across model destruct/reload cycles") {
   CHECK_EQ(responses[1].target.text,
            "Das Menü ist nicht auf Englisch verfügbar.");
   CHECK_EQ(responses[2].target.text, "Wo ist der Hauptbahnhof?");
+}
+
+TEST("two-vocab translate pins the golden output (en-ja v2.3)") {
+  REQUIRE_FIXTURE_2V();
+  auto model = load_enja_model();
+  leanmt::Blocking service(leanmt::Config{});
+  leanmt::Options options;
+
+  // Golden recorded from the pinned two-vocab fixture (enja v2.3). Exercises
+  // the paths shared-vocab coverage never touches: separate
+  // encoder_Wemb/decoder_Wemb embedding lookup, the decoder_Wemb_intgemm8
+  // output projection with its decoder_Wemb_QuantMultA alpha, and
+  // trg-vocab detokenization. If this flips, a human must look.
+  auto responses = service.translate(model, {kEnjaInput}, options);
+  CHECK_EQ(responses.size(), 1u);
+  CHECK_EQ(responses[0].source.sentence_count(), 1u);
+  CHECK_EQ(responses[0].target.sentence_count(), 1u);
+  CHECK_EQ(responses[0].target.text, "こんにちは、これは小さなテストです。");
+}
+
+TEST("two-vocab translate is deterministic across repeated runs") {
+  REQUIRE_FIXTURE_2V();
+  auto model = load_enja_model();
+  // Separate Blocking services: their per-service cache must not be what
+  // makes the second run equal the first.
+  leanmt::Blocking first_service(leanmt::Config{});
+  leanmt::Blocking second_service(leanmt::Config{});
+  leanmt::Options options;
+
+  const std::string input = "The menu is not available in English.";
+  auto first = first_service.translate(model, {input}, options);
+  auto second = second_service.translate(model, {input}, options);
+  CHECK_EQ(first.size(), 1u);
+  CHECK_EQ(second.size(), 1u);
+  CHECK_EQ(first[0].target.text, second[0].target.text);
+  CHECK(!first[0].target.text.empty());
+}
+
+TEST("shared-vocab and two-vocab models coexist with independent goldens") {
+  REQUIRE_FIXTURE();
+  REQUIRE_FIXTURE_2V();
+  leanmt::Options options;
+
+  // Interleave model lifetimes: ende (shared Wemb) → enja (separate
+  // encoder/decoder_Wemb) → fresh ende. Vocabulary aliasing and the Wemb
+  // alias selection have produced load-order-dependent behaviour in this
+  // fork's history; both models' goldens must survive any interleaving.
+  const std::string end_golden = "Hallo Welt, das ist ein kleiner Test.";
+  const std::string enja_golden = "こんにちは、これは小さなテストです。";
+
+  auto first_ende = load_model();
+  leanmt::Blocking service_a(leanmt::Config{});
+  auto r1 = service_a.translate(first_ende, {kEnjaInput}, options);
+  CHECK_EQ(r1[0].target.text, end_golden);
+  CHECK_EQ(&first_ende->target_vocabulary(), &first_ende->vocabulary());
+
+  auto enja = load_enja_model();
+  leanmt::Blocking service_b(leanmt::Config{});
+  auto r2 = service_b.translate(enja, {kEnjaInput}, options);
+  CHECK_EQ(r2[0].target.text, enja_golden);
+  CHECK(&enja->target_vocabulary() != &enja->vocabulary());
+
+  // The first model's decode must be unaffected by the second model's load.
+  auto r3 = service_a.translate(first_ende, {kEnjaInput}, options);
+  CHECK_EQ(r3[0].target.text, end_golden);
+
+  auto second_ende = load_model();
+  leanmt::Blocking service_c(leanmt::Config{});
+  auto r4 = service_c.translate(second_ende, {kEnjaInput}, options);
+  CHECK_EQ(r4[0].target.text, end_golden);
 }
 
 int main() { return leanmt::test::run_all(); }

@@ -30,6 +30,35 @@ bool fixture_available() {
     return;                                                        \
   }
 
+std::string fixture_2v(const std::string& file) {
+  return leanmt::test::fixture_2v_dir() + "/" + file;
+}
+
+bool fixture_2v_available() {
+  struct stat st;
+  return ::stat(fixture_2v("model.enja.intgemm.alphas.bin").c_str(), &st) ==
+         0;
+}
+
+#define REQUIRE_FIXTURE_2V()                                       \
+  if (!fixture_2v_available()) {                                   \
+    std::cout << "    skip: two-vocab fixtures not present (run "  \
+                 "tests/fixtures/download-fixtures.sh)\n";         \
+    return;                                                        \
+  }
+
+// en-ja v2.3 (Firefox remote-settings): 6 encoder layers, **4** decoder
+// layers, 8 heads, ffn depth 2 per the embedded model.yml. Decoder depth
+// differs from the tiny11 shared-vocab fixture (2) — pin it explicitly.
+leanmt::Model::Config enja_config() {
+  leanmt::Model::Config config;
+  config.encoder_layers = 6;
+  config.decoder_layers = 4;
+  config.feed_forward_depth = 2;
+  config.num_heads = 8;
+  return config;
+}
+
 }  // namespace
 
 TEST("model loads from mmap package with shared-vocab aliasing") {
@@ -111,6 +140,37 @@ TEST("corrupt model content fails fast, not with a crash") {
   }
   std::remove(path);
   CHECK(threw);
+}
+
+TEST("two-vocab model loads with separate source/target vocabularies") {
+  REQUIRE_FIXTURE_2V();
+  leanmt::Package<std::string> files{
+      .model = fixture_2v("model.enja.intgemm.alphas.bin"),
+      .vocabulary = fixture_2v("srcvocab.enja.spm"),
+      .target_vocabulary = fixture_2v("trgvocab.enja.spm"),
+      .shortlist = fixture_2v("lex.50.50.enja.s2t.bin"),
+  };
+  auto model = std::make_shared<Model>(enja_config(), files);
+
+  CHECK_EQ(model->config().encoder_layers, 6u);
+  CHECK_EQ(model->config().decoder_layers, 4u);
+  // Two-vocab model: target vocabulary must NOT alias the source.
+  CHECK(&model->target_vocabulary() != &model->vocabulary());
+  CHECK_EQ(model->vocabulary().size(), 32000u);
+  CHECK_EQ(model->target_vocabulary().size(), 32000u);
+  CHECK(model->shortlist_generator().has_value());
+}
+
+TEST("two-vocab model with empty target vocabulary fails fast") {
+  REQUIRE_FIXTURE_2V();
+  leanmt::Package<std::string> files{
+      .model = fixture_2v("model.enja.intgemm.alphas.bin"),
+      .vocabulary = fixture_2v("srcvocab.enja.spm"),
+      .target_vocabulary = "",  // bug the JNI bridge must not get away with
+      .shortlist = fixture_2v("lex.50.50.enja.s2t.bin"),
+  };
+  CHECK_THROWS(Model(enja_config(), files),
+               "two-vocabulary model");
 }
 
 int main() { return leanmt::test::run_all(); }
