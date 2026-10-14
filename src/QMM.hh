@@ -140,8 +140,9 @@ void clear_all_pack_caches();
 // when their contexts lazily initialize. Ruy splits GEMMs over rows/columns
 // only (never the reduction K dimension), so results are bit-identical at
 // any thread count. Pool threads are created lazily on the first
-// multi-threaded Mul. Defaults: 1, or the LEANMT_THREADS environment
-// variable at process start.
+// multi-threaded Mul. Defaults: 2 (see the reference-arm64 sweep evidence in
+// PR #6 / NEU-23), or the LEANMT_THREADS environment variable at process
+// start.
 void set_num_threads(size_t threads);
 
 // The current process-wide default — what newly initialized per-thread

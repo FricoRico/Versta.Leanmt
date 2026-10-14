@@ -10,19 +10,40 @@ slimt/bergamot lineage; upstream syncs list their source commits.
 - Intra-op ruy threading knob: `leanmt::qmm::set_num_threads` /
   `qmm::num_threads`, `Model::Config::threads` (0 = keep process default),
   `LEANMT_THREADS` env seed. Bit-identical outputs at any thread count (ruy
-  never splits the reduction dimension; verified empirically). Default stays
-  1 until the reference-arm64 sweep justifies otherwise.
+  never splits the reduction dimension; verified empirically).
 - `bench/leanmt-bench`: `--threads N` and `--batch N` (batched-decode
   measurement with a batch of N distinct deterministic sentences); results
   JSON now records the actual thread count and batch per run.
 - CI `arm64-test-bench`: per-PR thread/batch sweep (1/2/4 threads × batch
   1/4/8), published to the step summary and a folded PR comment; never gating,
-  canonical single-thread run unchanged for baseline comparability.
+  canonical default-config run unchanged for baseline comparability.
 - Tests: REQUIRE/CHECK_CLOSE helpers in `leanmt_test.hh`, synthetic two-vocab
   loader coverage in `io_test.cc` pinning the int8-embedding view contract and
-  bit-exact dequant-on-gather formula.
+  bit-exact dequant-on-gather formula, and a batch-independence frontend test
+  (6-row batch must equal 6 single translations, bit-for-bit).
+
+### Rejected after measurement (NEU-23)
+
+- **Extending NEON gemv coverage from rows ≤ 4 to rows 5..8** (2-row
+  interleaved sdot kernel for the shortlist-selected output projection under
+  batched decode). Reference-arm64 A/B (batch 8, 1 thread): slower at every
+  length (+7% at 24 words, +1% at 120) — ruy's 8-row-block kernel wins past
+  the existing crossover. The pre-existing ≤4-row dotprod gemv already covers
+  single-sentence and beam re-decode batch shapes; batch-of-8 stays on ruy.
+  Revert commit `a005ef5` carries the numbers for future reference.
 
 ### Changed (NEU-23)
+
+- **Default intra-op ruy threading: 1 → 2 threads.** Reference-arm64 sweep
+  (PR #6, ubuntu-24.04-arm, 4 vCPU): at threads=2, single-translate medians
+  improve −17% (8w), −16% (24w), −14% (60w), −3.5% (120w), batched inputs
+  likewise; no small-input regression; RSS unchanged. 4 threads regressed
+  batched long inputs on a 4-vCPU box (oversubscription) and was not taken:
+  `LEANMT_THREADS`/`Model::Config.threads` remain the escape hatch. Output
+  remains bit-identical to 1-thread (ruy never splits the reduction; the
+  pre-flip canonical bench run on the PR shows the same goldens green).
+  Baseline `bench/baselines/arm64.json` refreshed from the post-flip CI run
+  per the baselines contract §4.
 
 - **Wemb kept as int8 storage; dequantize on gather.** The loader no longer
   materializes f32 copies of `Wemb` / `encoder_Wemb` / `decoder_Wemb` (~32 MiB

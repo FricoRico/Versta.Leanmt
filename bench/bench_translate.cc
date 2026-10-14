@@ -9,9 +9,8 @@
 // summaries) and optionally written as JSON (for regression gating later).
 //
 // The corpus is generated deterministically from a fixed word list so runs
-// are comparable across machines and CI builds. Timing is single-threaded
-// (Blocking frontend, ruy's default thread pool), which mirrors the app's
-// current usage.
+// are comparable across machines and CI builds. Timing uses the library's
+// default threading (see qmm; override with --threads N or LEANMT_THREADS).
 
 #include <algorithm>
 #include <chrono>

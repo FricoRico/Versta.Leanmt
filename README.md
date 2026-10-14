@@ -271,8 +271,9 @@ Environment levers useful when hunting memory-history-dependent issues:
   chunks with 0xCD bytes, turning latent read-before-write bugs into visible
   output corruption.
 - `LEANMT_DECODE_STATS=1` — per-decode batch/step accounting on stderr.
-- `LEANMT_THREADS=n` — process default for the intra-op ruy thread budget
-  (default 1); see the threading section above.
+- `LEANMT_THREADS=n` — environment default for the intra-op ruy thread budget
+  (shipped default 2, chosen from the reference-arm64 sweep — see the
+  threading section); mostly for bench/CI.
 
 ## Status
 

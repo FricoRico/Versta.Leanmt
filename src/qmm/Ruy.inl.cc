@@ -23,13 +23,21 @@ namespace {
 // Process-wide default for the maximum thread count of the per-thread ruy
 // contexts below. Seed from LEANMT_THREADS (bench/CI/dev knob); the library
 // code path to change it deliberately is leanmt::qmm::set_num_threads
-// (exposed through Model::Config::threads). Default 1 keeps the historical
-// single-threaded behaviour bit-for-bit; ruy never splits the reduction
+// (exposed through Model::Config::threads). Ruy never splits the reduction
 // (K) dimension, so any thread count yields identical int32 accumulators.
+//
+// Default 2 (NEU-23, reference-arm64 sweep evidence in PR #6): consistent
+// double-digit wins at 8..60 words across batch 1/4/8 vs 1 thread (e.g.
+// 60-word single translate 16.3 -> 14.1 ms median), no small-input
+// regression, negligible RSS. 4 threads regresses batched long inputs on a
+// 4-core box (oversubscription: 120-word batch-4 400 -> 885 ms), so the cap
+// stays conservative; on the Pixel-6a-class big.LITTLE target 2 maps to the
+// two prime cores. Devices wanting more set LEANMT_THREADS or
+// Model::Config::threads deliberately.
 int env_num_threads() {
   const char* env = std::getenv("LEANMT_THREADS");
   if (env == nullptr || env[0] == '\0') {
-    return 1;
+    return 2;
   }
   int value = std::atoi(env);
   return value > 0 ? value : 1;
