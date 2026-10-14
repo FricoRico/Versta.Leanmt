@@ -353,10 +353,13 @@ Handle Async::translate(const Ptr<Model> &model, std::string source,
   auto future = promise->get_future();
   auto continuation = [promise, on_progress = options.on_progress](
                           Response &&response) {
-    promise->set_value(std::move(response));
+    // Fire the caller's callback before fulfilling the promise: once
+    // set_value wakes the waiter, the stack frame that owns the callback's
+    // captures can be torn down while a late on_progress is still running.
     if (on_progress) {
       on_progress();
     }
+    promise->set_value(std::move(response));
     return nullptr;
   };
   auto on_error = [promise](std::exception_ptr eptr) {
@@ -404,12 +407,13 @@ Handle Async::pivot(const Ptr<Model> &first, const Ptr<Model> &second,
       // second half will be available when complete.
       Response response =
           combine(std::move(source_to_pivot), std::move(pivot_to_target));
-      promise->set_value(std::move(response));
       // Fire once per input, when both legs are done — same per-input
-      // granularity as the direct translate path.
+      // granularity as the direct translate path. Fired before set_value
+      // for the lifetime reason given on the direct path.
       if (on_progress) {
         on_progress();
       }
+      promise->set_value(std::move(response));
       return nullptr;
     };
 

@@ -5,6 +5,20 @@ slimt/bergamot lineage; upstream syncs list their source commits.
 
 ## [Unreleased]
 
+### Fixed (NEU-27)
+
+- **Use-after-scope in `Frontend` continuations:** `Options::on_progress`
+  now fires **before** the result promise is fulfilled. Previously a waiter
+  waking on `set_value` could destroy the stack frame that owns the
+  callback's captures while a still-running `on_progress` referenced it —
+  reachable through the JNI bridge. Risk: none to output bytes (pure
+  callback/promise ordering); callers that assumed the future is already
+  ready inside their callback would observe the *corrected* order.
+  Validation: existing frontend determinism tests; race itself is not
+  unit-observable (coverage gap noted in docs/upstream-review-2026Q4.md).
+  Found during the 2026Q4 review; approach informed by the reference fork
+  DavidVentura/slimt@922f292 — implementation is ours.
+
 ### Added (NEU-16)
 
 - Native unit-test suite (`tests/`, ctest): model-format loader hard/soft
