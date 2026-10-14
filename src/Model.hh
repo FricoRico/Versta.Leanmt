@@ -97,6 +97,12 @@ class Model {
                         const std::vector<size_t> &beam_widths,
                         float limit_factor, Arena &arena) const;
 
+  // Fail-fast guard: a two-vocabulary model (the model file carries
+  // `decoder_Wemb`) with an empty `target_vocabulary` can only produce
+  // garbage — decode and eos lookup would run through the source vocabulary.
+  // Throw a precise error instead of aliasing silently.
+  void require_target_vocabulary_for_two_vocab_model() const;
+
   static std::optional<ShortlistGenerator> make_shortlist_generator(
       View view, const Vocabulary &source, const Vocabulary &target);
 

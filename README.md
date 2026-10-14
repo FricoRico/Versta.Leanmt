@@ -185,8 +185,17 @@ Per-ABI SIMD flags are selected by the *consuming* superproject in
 ## Native tests
 
 Assertion-based, dependency-free unit tests live in `tests/` and run via
-ctest. Model-dependent cases use a pinned FirefoxMT fixture
-(`ende.student.tiny11` v2, SHA-256 verified):
+ctest. Model-dependent cases use two pinned FirefoxMT fixtures (both
+SHA-256 verified at download):
+
+- `ende.student.tiny11` v2 — shared-vocabulary reference model (single
+  `vocab.deen.spm`, tied `Wemb`) from the statmt bergamot mirror;
+- `enja.base.v2.3` — two-vocabulary model (separate `srcvocab.enja.spm` /
+  `trgvocab.enja.spm`, distinct `encoder_Wemb` / `decoder_Wemb` tensors)
+  for English→Japanese as shipped by Firefox Translations remote-settings
+  v2.3. This is the fixture that covers the vocabulary-aliasing and
+  `decoder_Wemb_QuantMultA` alpha paths that a shared-vocab model never
+  exercises.
 
 ```bash
 tests/fixtures/download-fixtures.sh   # one-time, checksum-verified
@@ -194,6 +203,10 @@ cmake -B build -DLEANMT_BUILD_TESTS=ON -DUSE_NEON=ON   # or -DUSE_SSE2=ON
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
+
+Fixture dirs can be relocated via `LEANMT_FIXTURES` (ende) /
+`LEANMT_FIXTURES_2V` (en-ja) — CMake variables at configure time or
+environment variables at test time.
 
 CI runs the suite on both a Linux x86_64 runner and a native Linux arm64
 runner (real NEON kernels, no emulation).
@@ -226,7 +239,12 @@ precise message in these cases (no crashes, no undefined behaviour):
   `kBinaryFileVersion` == 1, the bergamot int8 layout);
 - truncated or corrupt model file — every length field read is bounds-checked
   against the mapped size;
-- tensor with an unknown/incompatible element type.
+- tensor with an unknown/incompatible element type;
+- two-vocabulary model (the file ships separate `encoder_Wemb` /
+  `decoder_Wemb` tensors, e.g. Mozilla's en-ja/en-zh) loaded without
+  `Package::target_vocabulary` — without the target vocabulary the decoder
+  and eos lookup would silently alias the source vocabulary and emit
+  garbage, so load now fails fast instead.
 
 A model handle outlives any translation session; sessions must be torn down
 first (the app-side JNI/Kotlin contract also lives in Versta.Android's

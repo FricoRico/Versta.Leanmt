@@ -94,12 +94,20 @@ class Transformer {
   const Encoder &encoder() const { return encoder_; }
   const Decoder &decoder() const { return decoder_; }
 
+  // True when the model file ships separate two-vocabulary embeddings —
+  // i.e. a `decoder_Wemb` tensor was consumed during load (en-ja, en-zh,
+  // ...). Such models require `Package::target_vocabulary` to be set;
+  // aliasing the source vocabulary would decode target ids through the
+  // wrong sentencepiece model.
+  bool uses_two_vocab_embeddings() const { return two_vocab_embeddings_; }
+
  private:
   void register_parameters(const std::string &prefix, ParameterMap &parameters);
   void load_parameters();
   void prepare_biases();
 
   std::vector<io::Item> items_;
+  bool two_vocab_embeddings_ = false;
   // Encoder input embedding. Loaded from `Wemb` (single-vocab) or
   // `encoder_Wemb` (two-vocab).
   Tensor encoder_embedding_;

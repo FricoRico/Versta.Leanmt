@@ -3,12 +3,18 @@
 # (model mmap load, sentencepiece tokenization, deterministic translate).
 #
 # Fixtures: tests/fixtures/download-fixtures.sh fetches the pinned
-# ende.student.tiny11 model (SHA-256 verified). Model-dependent cases skip
+# ende.student.tiny11 model (shared vocab) and enja.base.v2.3 model
+# (two-vocabulary), both SHA-256 verified. Model-dependent cases skip
 # quietly if fixtures are absent.
 
 if(NOT DEFINED LEANMT_FIXTURES)
   set(LEANMT_FIXTURES
       "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/models/ende.student.tiny11")
+endif()
+
+if(NOT DEFINED LEANMT_FIXTURES_2V)
+  set(LEANMT_FIXTURES_2V
+      "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/models/enja.base.v2.3")
 endif()
 
 set(LEANMT_TEST_COMPILE_OPTIONS -Wall -Wextra)
@@ -18,7 +24,9 @@ function(leanmt_add_test NAME SOURCE)
   target_link_libraries(${NAME} PRIVATE leanmt)
   target_compile_options(${NAME} PRIVATE ${LEANMT_TEST_COMPILE_OPTIONS})
   target_compile_definitions(
-    ${NAME} PRIVATE LEANMT_FIXTURE_DEFAULT_DIR="${LEANMT_FIXTURES}")
+    ${NAME}
+    PRIVATE LEANMT_FIXTURE_DEFAULT_DIR="${LEANMT_FIXTURES}"
+            LEANMT_FIXTURE_2V_DEFAULT_DIR="${LEANMT_FIXTURES_2V}")
   add_test(NAME ${NAME} COMMAND ${NAME})
 endfunction()
 

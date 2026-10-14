@@ -75,7 +75,9 @@ Model::Model(const Config &config, const Package<View> &package)
       transformer_(config.encoder_layers, config.decoder_layers,
                    config.num_heads, config.feed_forward_depth, package.model),
       shortlist_generator_(make_shortlist_generator(
-          package.shortlist, src_vocabulary_, target_vocabulary())) {}
+          package.shortlist, src_vocabulary_, target_vocabulary())) {
+  require_target_vocabulary_for_two_vocab_model();
+}
 
 Model::Model(const Config &config, const Package<std::string> &package)
     : id_(model_id++),
@@ -88,7 +90,20 @@ Model::Model(const Config &config, const Package<std::string> &package)
       transformer_(config.encoder_layers, config.decoder_layers,
                    config.num_heads, config.feed_forward_depth, view_.model),
       shortlist_generator_(make_shortlist_generator(
-          view_.shortlist, src_vocabulary_, target_vocabulary())) {}
+          view_.shortlist, src_vocabulary_, target_vocabulary())) {
+  require_target_vocabulary_for_two_vocab_model();
+}
+
+void Model::require_target_vocabulary_for_two_vocab_model() const {
+  if (transformer_.uses_two_vocab_embeddings() && !tgt_vocabulary_) {
+    throw std::runtime_error(
+        "[leanmt] two-vocabulary model (separate encoder_Wemb/decoder_Wemb, "
+        "e.g. en-ja/en-zh) loaded with an empty target vocabulary: pass the "
+        "model's trgvocab .spm as Package::target_vocabulary. Without it the "
+        "decoder would read target ids through the source vocabulary and "
+        "produce silent garbage");
+  }
+}
 
 std::optional<ShortlistGenerator> Model::make_shortlist_generator(
     View view, const Vocabulary &source, const Vocabulary &target) {
