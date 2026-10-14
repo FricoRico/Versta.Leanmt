@@ -134,13 +134,28 @@ jobs:
         env:
           CC: clang
           CXX: clang++
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DUSE_SSE2=ON -DLEANMT_BUILD_TESTS=ON -DLEANMT_BUILD_BENCH=ON
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DUSE_SSE2=ON -DLEANMT_BUILD_TESTS=ON -DLEANMT_BUILD_BENCH=ON -DLEANMT_BUILD_PROBE=ON
 
       - name: Build
         run: cmake --build build -j"$(nproc)" 2>&1 | tee build.log
 
       - name: Test
         run: ctest --test-dir build --output-on-failure 2>&1 | tee test.log
+
+      # Pack-acceptance probe smoke (NEU-60): the Versta.Models acceptance
+      # harness consumes this binary; catch contract drift at the source.
+      - name: Probe smoke
+        run: |
+          F=tests/fixtures/models/ende.student.tiny11
+          printf 'The ticket costs 12 euros.\n' > probe-smoke.txt
+          ./build/probe/leanmt-probe \
+            --model "$F/model.intgemm.alphas.bin" \
+            --vocab "$F/vocab.deen.spm" \
+            --shortlist "$F/lex.s2t.bin" \
+            --encoder_layers 6 --decoder_layers 2 --ffn_depth 2 --num_heads 8 \
+            --probes probe-smoke.txt --json probe-smoke.json
+          test -s probe-smoke.json
+          grep -q '"load_ok": true' probe-smoke.json
 
       - name: Publish failure log to git notes
         if: failure()
@@ -185,13 +200,29 @@ jobs:
         env:
           CC: clang
           CXX: clang++
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DUSE_NEON=ON -DLEANMT_BUILD_TESTS=ON -DLEANMT_BUILD_BENCH=ON
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DUSE_NEON=ON -DLEANMT_BUILD_TESTS=ON -DLEANMT_BUILD_BENCH=ON -DLEANMT_BUILD_PROBE=ON
 
       - name: Build
         run: cmake --build build -j"$(nproc)" 2>&1 | tee build.log
 
       - name: Test
         run: ctest --test-dir build --output-on-failure 2>&1 | tee test.log
+
+      # Same probe smoke as host-test, here on real NEON (the acceptance
+      # harness's canonical runner arch is arm64 — see Versta.Models
+      # pack-acceptance workflow).
+      - name: Probe smoke
+        run: |
+          F=tests/fixtures/models/ende.student.tiny11
+          printf 'The ticket costs 12 euros.\n' > probe-smoke.txt
+          ./build/probe/leanmt-probe \
+            --model "$F/model.intgemm.alphas.bin" \
+            --vocab "$F/vocab.deen.spm" \
+            --shortlist "$F/lex.s2t.bin" \
+            --encoder_layers 6 --decoder_layers 2 --ffn_depth 2 --num_heads 8 \
+            --probes probe-smoke.txt --json probe-smoke.json
+          test -s probe-smoke.json
+          grep -q '"load_ok": true' probe-smoke.json
 
       - name: Publish failure log to git notes
         if: failure()
