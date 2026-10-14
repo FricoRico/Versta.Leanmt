@@ -93,3 +93,12 @@ option(LEANMT_BUILD_BENCH "Build the latency/RSS benchmark harness" OFF)
 if(LEANMT_BUILD_BENCH)
   add_subdirectory(bench)
 endif()
+
+# Pack-acceptance probe: loads one bundle direction under app-parity decode
+# settings and translates a probe corpus for the Versta.Models acceptance
+# harness (NEU-60). Host-only like tests/bench; the app's NDK build leaves it
+# off.
+option(LEANMT_BUILD_PROBE "Build the pack-acceptance probe" OFF)
+if(LEANMT_BUILD_PROBE)
+  add_subdirectory(probe)
+endif()
