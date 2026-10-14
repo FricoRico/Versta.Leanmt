@@ -10,6 +10,13 @@ the perf-tuning follow-up; today the tables are published for review).
   (aarch64, NEON, Release build at the repo's default ruy thread budget; 1
   thread until NEU-23's flip, 2 threads after — the refresh commit names the
   change).
+- `arm64-digits.json` — same runner and config, but the numeric corpus
+  (`leanmt-bench --digits`): every sentence carries numbers. Introduced by
+  NEU-30 to watch the shortlist digit-forcing cost on digit rows; compared
+  against `arm64.json` rows at equal word counts for budget review (digit
+  rows bear a larger subword count intrinsically — compare against the
+  *pre-forcing digit rows*, not against the word pool). Sourced from the
+  CI git note ref `bench-arm64-digits` via `extract-baseline.py --digits`.
 
 ## Contract (do not hand-edit numbers)
 

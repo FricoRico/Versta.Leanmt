@@ -221,6 +221,21 @@ jobs:
           test -s bench-results.json
           test -s bench-table.md
 
+      # Numeric rows (NEU-30): same lengths, digit-bearing corpus. Watches the
+      # digit-row latency/RSS budget (<= +10% vs pre-digit-forcing baseline,
+      # RSS unchanged) and guards the number-copy guarantee with perf numbers.
+      - name: Benchmark numeric corpus (digit rows)
+        run: |
+          F=tests/fixtures/models/ende.student.tiny11
+          ./build/bench/leanmt-bench \
+            --model "$F/model.intgemm.alphas.bin" \
+            --vocab "$F/vocab.deen.spm" \
+            --shortlist "$F/lex.s2t.bin" \
+            --digits --iterations 30 --warmup 5 \
+            --json bench-digits.json | tee bench-digits-table.md
+          test -s bench-digits.json
+          test -s bench-digits-table.md
+
       # NEU-23 tuning instrument: ruy intra-op thread-pool sizing and batched
       # decode. Runs only on PRs; push builds keep the single canonical bench
       # above (batch 1 at the shipped default thread count) so its published
@@ -298,6 +313,10 @@ jobs:
             echo ""
             cat bench-table.md
             echo ""
+            echo "#### Numeric corpus (digit rows, NEU-30)"
+            echo ""
+            tail -n +2 bench-digits-table.md
+            echo ""
             echo "_Fixture: ende.student.tiny11 v2, sha256-pinned._"
             echo "_Regression baselines live in bench/baselines/ (see README there)._"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -309,11 +328,14 @@ jobs:
           path: |
             bench-results.json
             bench-table.md
+            bench-digits.json
+            bench-digits-table.md
           if-no-files-found: error
 
       # Primary publication channel with no auth required on the read side:
       # `git notes` under refs/notes/bench-arm64, keyed by commit. Fetch with
       # `git fetch origin refs/notes/bench-arm64:refs/notes/bench-arm64`.
+      # Digit-row numbers ride a sibling ref (bench-arm64-digits).
       - name: Publish bench JSON to git notes
         run: |
           git config user.name "leanmt-ci"
@@ -322,6 +344,10 @@ jobs:
           git notes --ref bench-arm64 add -f -F bench-results.json "$GITHUB_SHA"
           git push origin "refs/notes/bench-arm64:refs/notes/bench-arm64" \
             || echo "::warning:: bench notes push failed"
+          git fetch origin "refs/notes/bench-arm64-digits:refs/notes/bench-arm64-digits" || true
+          git notes --ref bench-arm64-digits add -f -F bench-digits.json "$GITHUB_SHA"
+          git push origin "refs/notes/bench-arm64-digits:refs/notes/bench-arm64-digits" \
+            || echo "::warning:: bench digits notes push failed"
 
       - name: Publish benchmark results as comment
         continue-on-error: true
@@ -330,10 +356,12 @@ jobs:
           script: |
             const fs = require('fs');
             const table = fs.readFileSync('bench-table.md', 'utf8');
+            const digitsTable = fs.readFileSync('bench-digits-table.md', 'utf8');
             // Embed the raw JSON so the numbers are recoverable from the public
             // comment itself — artifact downloads need API auth, comments
             // don't. bench/baselines/arm64.json is sourced from this.
             const json = fs.readFileSync('bench-results.json', 'utf8');
+            const digitsJson = fs.readFileSync('bench-digits.json', 'utf8');
             const body = [
               '### leanmt benchmark (' + context.sha.slice(0, 7) + ')',
               '',
@@ -343,10 +371,24 @@ jobs:
               '',
               table,
               '',
+              '#### Numeric corpus (digit rows, NEU-30)',
+              '',
+              'Same runner/config, sentences carry numbers — watches the',
+              'digit-row latency/RSS budget of shortlist digit forcing.',
+              '',
+              digitsTable.trim().split('\n').slice(1).join('\n'),
+              '',
               '<details><summary>bench-results.json (raw)</summary>',
               '',
               '```json',
               json.trim(),
+              '```',
+              '</details>',
+              '',
+              '<details><summary>bench-digits.json (raw)</summary>',
+              '',
+              '```json',
+              digitsJson.trim(),
               '```',
               '</details>',
               '',

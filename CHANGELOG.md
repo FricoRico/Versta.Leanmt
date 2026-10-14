@@ -33,6 +33,20 @@ slimt/bergamot lineage; upstream syncs list their source commits.
   goldens byte-identical. Approach informed by the reference fork
   DavidVentura/slimt@2beb403 — implementation is ours; risk note on the PR.
 
+### Added (NEU-30)
+
+- Numeric-fidelity gate (`tests/numeric_fidelity_test`, ctest): translates
+  the pinned 100-sentence numeric travel corpus
+  (`tests/fixtures/numeric/travel_ende_100.txt` — prices, times, dates,
+  addresses, quantities, codes) and scores digit-run multiset equality per
+  row; fails below 95% row exact-match. `--require-rate`/`--corpus`/`--dump`
+  flags make the same binary the golden-diff tool for output-affecting PRs.
+- `bench/leanmt-bench --digits`: numeric-corpus rows at the canonical
+  lengths (every sixth word is a number from a fixed pool); the arm64 CI job
+  now publishes a digit-rows table + JSON alongside the word-pool table
+  (git notes ref `bench-arm64-digits`;
+  `extract-baseline.py --digits` captures it).
+
 ### Sync (NEU-27, 2026Q4)
 
 - ruy submodule `c04e5e5` → `2264753` (google/ruy master, 2026-07-22).
