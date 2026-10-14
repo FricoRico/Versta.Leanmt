@@ -78,6 +78,9 @@ void clear_standalone_pack_cache();
 // pointed-to model tensors are alive and never re-mapped.
 void clear_all_pack_caches();
 
+void set_num_threads(size_t threads);
+size_t num_threads();
+
 }  // namespace detail
 
 Tensor affine(const Tensor& x, const Tensor& W, const Tensor& b, float a_quant,
@@ -125,5 +128,24 @@ void clear_standalone_pack_cache();
 // persistent cache keys packs by data pointer, which is only sound while the
 // pointed-to model tensors are alive and never re-mapped.
 void clear_all_pack_caches();
+
+// Threading for GEMM work inside a single translate call (intra-op). leanmt
+// runs the decode loop on the caller's thread (Blocking) or per-request
+// worker threads (Async); each such CPU thread owns a thread_local
+// ruy::Context whose multi-threaded Mul work goes to that context's own ruy
+// thread pool.
+//
+// set_num_threads changes the pool size for the calling thread's contexts
+// immediately and sets the process-wide default that other threads adopt
+// when their contexts lazily initialize. Ruy splits GEMMs over rows/columns
+// only (never the reduction K dimension), so results are bit-identical at
+// any thread count. Pool threads are created lazily on the first
+// multi-threaded Mul. Defaults: 1, or the LEANMT_THREADS environment
+// variable at process start.
+void set_num_threads(size_t threads);
+
+// The current process-wide default — what newly initialized per-thread
+// contexts adopt.
+size_t num_threads();
 
 }  // namespace leanmt::qmm

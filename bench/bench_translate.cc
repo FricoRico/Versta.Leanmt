@@ -28,6 +28,7 @@
 
 #include "src/Frontend.hh"
 #include "src/Model.hh"
+#include "src/QMM.hh"
 
 namespace {
 
@@ -38,7 +39,8 @@ struct Args {
   std::vector<size_t> lengths{8, 24, 60, 120};
   size_t iterations = 25;
   size_t warmup = 5;
-  size_t workers = 1;
+  size_t batch = 1;
+  size_t threads = 0;  // 0 = keep the process default (1 or LEANMT_THREADS)
   std::string json_path;
 };
 
@@ -46,7 +48,7 @@ void usage(const char* argv0) {
   std::fprintf(stderr,
                "usage: %s --model <model.bin> --vocab <vocab.spm> --shortlist "
                "<lex.s2t.bin> [--lengths 8,24,60,120] [--iterations N] "
-               "[--warmup N] [--json out.json]\n",
+               "[--warmup N] [--batch N] [--threads N] [--json out.json]\n",
                argv0);
 }
 
@@ -66,7 +68,8 @@ bool parse(int argc, char** argv, Args& args) {
     else if (arg == "--shortlist") args.shortlist = need(i, "--shortlist");
     else if (arg == "--iterations") args.iterations = std::stoul(need(i, "--iterations"));
     else if (arg == "--warmup") args.warmup = std::stoul(need(i, "--warmup"));
-    else if (arg == "--workers") args.workers = std::stoul(need(i, "--workers"));
+    else if (arg == "--batch") args.batch = std::stoul(need(i, "--batch"));
+    else if (arg == "--threads") args.threads = std::stoul(need(i, "--threads"));
     else if (arg == "--json") args.json_path = need(i, "--json");
     else if (arg == "--lengths") {
       std::string csv = need(i, "--lengths");
@@ -88,8 +91,10 @@ bool parse(int argc, char** argv, Args& args) {
 }
 
 // Fixed English word pool (common nouns/verbs/adjectives) — deterministic
-// pseudo-sentences, no RNG state anywhere in the benchmark.
-std::string sentence_of_length(size_t words) {
+// pseudo-sentences, no RNG state anywhere in the benchmark. `offset` rotates
+// the starting word so batched rows differ from each other while staying
+// fully deterministic.
+std::string sentence_of_length(size_t words, size_t offset = 0) {
   static const char* kPool[] = {
       "the",      "station",   "is",      "near",    "the",     "old",
       "market",   "and",       "we",      "can",     "walk",    "there",
@@ -100,10 +105,11 @@ std::string sentence_of_length(size_t words) {
       "we",       "continue",  "towards", "the",     "quiet",   "harbour",
       "please",   "speak",     "slowly",  "and",     "write",   "down",
   };
+  constexpr size_t kPoolSize = sizeof(kPool) / sizeof(kPool[0]);
   std::string out;
   for (size_t i = 0; i < words; ++i) {
     if (i) out += ' ';
-    out += kPool[i % (sizeof(kPool) / sizeof(kPool[0]))];
+    out += kPool[(i + offset) % kPoolSize];
   }
   out.back() = '.';  // end with a period, like real input
   return out;
@@ -130,18 +136,25 @@ long rss_peak_kib() {
 
 struct Result {
   size_t words;
+  size_t batch;
   size_t iterations;
   double min_ms, median_ms, p95_ms, max_ms;
   long rss_start_kib, rss_end_kib;
 };
 
 Result run_length(leanmt::Blocking& service, const leanmt::Ptr<leanmt::Model>& model,
-                  size_t words, size_t iterations, size_t warmup) {
-  const std::string sentence = sentence_of_length(words);
+                  size_t words, size_t batch, size_t iterations, size_t warmup) {
+  // A batch of distinct sentences (rotated word-pool offsets): batch=1 keeps
+  // the historical single-sentence behaviour verbatim.
+  std::vector<std::string> sentences;
+  sentences.reserve(batch);
+  for (size_t b = 0; b < batch; ++b) {
+    sentences.push_back(sentence_of_length(words, b * 7));
+  }
   leanmt::Options options;
 
   for (size_t i = 0; i < warmup; ++i) {
-    (void)service.translate(model, {sentence}, options);
+    (void)service.translate(model, sentences, options);
   }
 
   long rss_start = rss_peak_kib();
@@ -149,7 +162,7 @@ Result run_length(leanmt::Blocking& service, const leanmt::Ptr<leanmt::Model>& m
   timings_ms.reserve(iterations);
   for (size_t i = 0; i < iterations; ++i) {
     auto started = std::chrono::steady_clock::now();
-    (void)service.translate(model, {sentence}, options);
+    (void)service.translate(model, sentences, options);
     auto ended = std::chrono::steady_clock::now();
     timings_ms.push_back(
         std::chrono::duration<double, std::milli>(ended - started).count());
@@ -162,6 +175,7 @@ Result run_length(leanmt::Blocking& service, const leanmt::Ptr<leanmt::Model>& m
     return timings_ms[std::min(idx, timings_ms.size() - 1)];
   };
   return Result{words,
+                batch,
                 iterations,
                 timings_ms.front(),
                 pct(0.5),
@@ -193,6 +207,14 @@ int main(int argc, char** argv) {
     return 2;
   }
 
+  // Intra-op GEMM threads: 0 keeps the process default (1, or the
+  // LEANMT_THREADS env). Set before model construction so the per-thread
+  // ruy contexts never see a stale value. Latencies are bit-identical at any
+  // thread count (ruy splits rows/columns, never the reduction).
+  if (args.threads > 0) {
+    leanmt::qmm::set_num_threads(args.threads);
+  }
+
   auto load_start = std::chrono::steady_clock::now();
   long rss_baseline = rss_peak_kib();
   leanmt::Package<std::string> files{
@@ -216,19 +238,20 @@ int main(int argc, char** argv) {
 
   std::vector<Result> results;
   for (size_t words : args.lengths) {
-    results.push_back(run_length(service, model, words, args.iterations, args.warmup));
+    results.push_back(
+        run_length(service, model, words, args.batch, args.iterations, args.warmup));
   }
 
-  std::printf("\n## leanmt bench (arch=%s, threads=%zu, model=%s)\n\n",
-              arch_string().c_str(), args.workers,
+  std::printf("\n## leanmt bench (arch=%s, threads=%zu, batch=%zu, model=%s)\n\n",
+              arch_string().c_str(), leanmt::qmm::num_threads(), args.batch,
               "ende.student.tiny11 int8 (pinned)");
   std::printf("model load: %.1f ms | RSS start: %ld KiB | peak after load: %ld KiB\n\n",
               load_ms, rss_baseline, rss_peak_kib());
-  std::printf("| words | iters | min ms | median ms | p95 ms | max ms | RSS peak KiB |\n");
-  std::printf("|------:|------:|-------:|----------:|-------:|-------:|-------------:|\n");
+  std::printf("| words | batch | iters | min ms | median ms | p95 ms | max ms | RSS peak KiB |\n");
+  std::printf("|------:|------:|------:|-------:|----------:|-------:|-------:|-------------:|\n");
   for (const Result& r : results) {
-    std::printf("| %5zu | %5zu | %7.3f | %10.3f | %7.3f | %7.3f | %12ld |\n",
-                r.words, r.iterations, r.min_ms, r.median_ms, r.p95_ms,
+    std::printf("| %5zu | %5zu | %5zu | %7.3f | %10.3f | %7.3f | %7.3f | %12ld |\n",
+                r.words, r.batch, r.iterations, r.min_ms, r.median_ms, r.p95_ms,
                 r.max_ms, r.rss_end_kib);
   }
   std::printf("\n");
@@ -237,7 +260,8 @@ int main(int argc, char** argv) {
     std::ofstream json(args.json_path);
     json << "{\n  \"tool\": \"leanmt-bench\",\n"
          << "  \"arch\": \"" << arch_string() << "\",\n"
-         << "  \"workers\": " << args.workers << ",\n"
+         << "  \"threads\": " << leanmt::qmm::num_threads() << ",\n"
+         << "  \"batch\": " << args.batch << ",\n"
          << "  \"model\": \"ende.student.tiny11 v2 (pinned sha256)\",\n"
          << "  \"model_load_ms\": " << load_ms << ",\n"
          << "  \"rss_start_kib\": " << rss_baseline << ",\n"
@@ -245,7 +269,8 @@ int main(int argc, char** argv) {
          << "  \"results\": [\n";
     for (size_t i = 0; i < results.size(); ++i) {
       const Result& r = results[i];
-      json << "    {\"words\": " << r.words << ", \"iterations\": " << r.iterations
+      json << "    {\"words\": " << r.words << ", \"batch\": " << r.batch
+           << ", \"iterations\": " << r.iterations
            << ", \"min_ms\": " << r.min_ms << ", \"median_ms\": " << r.median_ms
            << ", \"p95_ms\": " << r.p95_ms << ", \"max_ms\": " << r.max_ms
            << ", \"rss_peak_kib\": " << r.rss_end_kib << "}"
