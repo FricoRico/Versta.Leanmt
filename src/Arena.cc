@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cstdlib>
+#include <cstring>
 
 #include "Aligned.hh"
 
@@ -18,6 +19,10 @@ void* aligned_malloc(size_t alignment, size_t size) {
   return ptr;
 }
 }  // namespace
+
+// Defined in Aligned.cc — shared debug gate (LEANMT_POISON_ALLOC=1) for
+// poisoning freshly acquired memory, arena chunks included.
+bool poison_debug_enabled();
 
 Arena* active_arena() { return g_active_arena; }
 
@@ -78,6 +83,14 @@ void Arena::grow(size_t at_least) {
 }
 
 void Arena::reset() {
+  // See Aligned.cc: LEANMT_POISON_ALLOC=1 turns latent read-before-write bugs
+  // (masked by fresh zero pages on first use) into deterministic garbage.
+  // Arena memory is recycled every decode step, so poison at reset time.
+  if (poison_debug_enabled()) {
+    for (auto& chunk : chunks_) {
+      std::memset(chunk.data.get(), 0xCD, chunk.capacity);
+    }
+  }
   current_index_ = 0;
   cursor_ = 0;
 }

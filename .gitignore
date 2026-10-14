@@ -57,3 +57,9 @@ dist
 
 # Jetbrains IDE
 .idea
+
+# Downloaded test fixtures (sha256-pinned, fetched on demand)
+tests/fixtures/models/
+
+# zig cc shim leaks CMake stdlib-detection preprocessed output as a file named "-"
+/-

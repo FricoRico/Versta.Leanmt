@@ -69,10 +69,13 @@ foreach(LEANMT_LIB IN LISTS LEANMT_LIBRARIES)
   target_include_directories(
     ${LEANMT_LIB}
     PUBLIC
-      "$<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>"
-      "$<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src>"
-      "$<BUILD_INTERFACE:${CMAKE_BINARY_DIR}>"
-      "$<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/src>"
+      # PROJECT_SOURCE_DIR / PROJECT_BINARY_DIR resolve to leanmt's own root
+      # even when built as a subproject (CMAKE_SOURCE_DIR would point at the
+      # superproject and leak wrong -I paths to consumers).
+      "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
+      "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>"
+      "$<BUILD_INTERFACE:${PROJECT_BINARY_DIR}>"
+      "$<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/src>"
       "$<INSTALL_INTERFACE:${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}>"
   )
 

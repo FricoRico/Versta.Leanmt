@@ -1,6 +1,7 @@
 #include "ruy/ruy.h"
 
 #include <cmath>
+#include <cstring>
 
 #if defined(__aarch64__)
 #include <arm_neon.h>
@@ -126,7 +127,16 @@ void multiply_i8_in(const int8_t* A, const Tensor& W, Index A_rows,
   ruy::MakeSimpleLayout(width, B_cols, ruy::Order::kColMajor,
                         rhs.mutable_layout());
   rhs.set_data(W.data<int8_t>());
-  rhs.set_cache_policy(ruy::CachePolicy::kAlwaysCache);
+  // LEANMT_DISABLE_PACK_CACHE=1 turns off ruy's pointer-keyed prepacked-RHS
+  // cache entirely (slower, but a decisive check when chasing
+  // allocator-history-dependent numerics).
+  static const bool disable_pack_cache = [] {
+    const char* env = std::getenv("LEANMT_DISABLE_PACK_CACHE");
+    return env != nullptr && env[0] == '1';
+  }();
+  if (!disable_pack_cache) {
+    rhs.set_cache_policy(ruy::CachePolicy::kAlwaysCache);
+  }
 
   ruy::Matrix<std::int32_t> dst;
   ruy::MakeSimpleLayout(A_rows, B_cols, ruy::Order::kRowMajor,
@@ -283,6 +293,7 @@ Tensor affine_relu_requantize(const Tensor& x, const Tensor& W,
   Shape out_shape = x.shape();
   out_shape.set_dim(-1, B_cols);
   Tensor AB(Type::i32, out_shape, name + "_acc");  // NOLINT
+
   multiply_i8(prepared_A.data<int8_t>(), W, A_rows, width, B_cols,
               AB.data<int32_t>());
 
@@ -462,5 +473,10 @@ Tensor affine_with_prepared_bias(const Tensor& x,
 
 void clear_standalone_pack_cache() {
   standalone_thread_context().ClearPrepackedCache();
+}
+
+void clear_all_pack_caches() {
+  standalone_thread_context().ClearPrepackedCache();
+  thread_context().ClearPrepackedCache();
 }
 }  // namespace leanmt::qmm::detail
