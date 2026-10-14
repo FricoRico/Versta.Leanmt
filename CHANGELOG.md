@@ -5,6 +5,58 @@ slimt/bergamot lineage; upstream syncs list their source commits.
 
 ## [Unreleased]
 
+### Fixed (NEU-30)
+
+- **Numbers now copy reliably through the lexical shortlist (digit
+  forcing).** The shortlist table is built from one deterministic
+  segmentation of the training corpus while the model trained under subword
+  sampling, so a number's alternative target pieces ("404" as ▁404 vs.
+  ▁4+04) are not guaranteed to be reachable through the table — on sparse
+  tables, digits get dropped or doubled in the output (prices, times,
+  addresses). `Vocabulary::is_digit_piece` classifies digit-only pieces, the
+  generator scans the target vocabulary once at load, and `generate()`
+  force-admits the most frequent digit-only target pieces whenever the
+  source carries a digit — after the frequency top-up, so digit pieces
+  never displace the candidates the budget exists to supply; the
+  multiple-of-eight vector alignment is restored on top. Admission is
+  capped at `kDigitAdmissionCap = 512` (frequency order; all 1- and 2-digit
+  chunks are always inside the cap, so every number stays copyable
+  chunk-wise — rare long-number specials are what the cap trims; the table
+  may still supply them). Worst case shortlist on digit rows is
+  align8(1000 + 512) = 1512 vs. 1000 before; no-digit inputs are untouched
+  (byte-identical shortlists by construction — pinned goldens cover this).
+  **Output-affecting by construction; measured zero byte-drift on the
+  pinned ende-tiny11 fixture** (3-sentence golden suite + 100-sentence
+  numeric corpus dump + 12k-sentence adversarial code sweep — all identical
+  before/after; the defect is latent on this fixture, so the change is a
+  structural guarantee + permanent CI gate rather than a behavior fix
+  there). Validation: new shortlist unit tests (chunk-coverage guarantee,
+  admission-count bound, alignment invariant, worst-case size bound, digit
+  decode round-trip), vocabulary classification tests, numeric-fidelity
+  ctest gate at 95% (measures 100.0% pre/post), goldens byte-identical.
+  Perf, reference arm64 (ubuntu-24.04-arm, CI git notes): digit rows
+  +1.6..+3.5% median at 8/24/60 words; the synthetic 120-word
+  digit-saturated row shows a non-linear +148% that is *insensitive to the
+  admission volume* (cap 256/512/uncapped all ≈ +150%) — not the forcing
+  itself; filed as NEU-81 for profile-driven root cause. Peak RSS +2.7% worst row
+  (larger shortlisted projection matrix). Approach informed by the
+  reference fork DavidVentura/slimt@2beb403 — implementation is ours; risk
+  note on the PR.
+
+### Added (NEU-30)
+
+- Numeric-fidelity gate (`tests/numeric_fidelity_test`, ctest): translates
+  the pinned 100-sentence numeric travel corpus
+  (`tests/fixtures/numeric/travel_ende_100.txt` — prices, times, dates,
+  addresses, quantities, codes) and scores digit-run multiset equality per
+  row; fails below 95% row exact-match. `--require-rate`/`--corpus`/`--dump`
+  flags make the same binary the golden-diff tool for output-affecting PRs.
+- `bench/leanmt-bench --digits`: numeric-corpus rows at the canonical
+  lengths (every sixth word is a number from a fixed pool); the arm64 CI job
+  now publishes a digit-rows table + JSON alongside the word-pool table
+  (git notes ref `bench-arm64-digits`;
+  `extract-baseline.py --digits` captures it).
+
 ### Sync (NEU-27, 2026Q4)
 
 - ruy submodule `c04e5e5` → `2264753` (google/ruy master, 2026-07-22).

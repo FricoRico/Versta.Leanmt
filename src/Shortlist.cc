@@ -136,6 +136,18 @@ ShortlistGenerator::ShortlistGenerator(                        //
   load(view.data, view.size, check);
 
   (void)source_index_;
+
+  // Precompute the digit-only target pieces once; generate() then pays for
+  // digit forcing only on inputs that actually carry a digit. ~1 ms on a
+  // 32k vocabulary, inside the one-time model-load path.
+  const size_t target_size = target_.size();
+  for (size_t i = 0; i < target_size; i++) {
+    Word id = static_cast<Word>(i);
+    if (target_.is_digit_piece(id)) {
+      digit_targets_.push_back(id);
+    }
+  }
+  LOG(info, "[data] Found %zu digit-only target pieces", digit_targets_.size());
 }
 
 Shortlist ShortlistGenerator::generate(const Words& words,
@@ -153,6 +165,11 @@ Shortlist ShortlistGenerator::generate(const Words& words,
     target_table[i] = true;
   }
 
+  // Whether any source piece is digit-only decides whether digit forcing
+  // kicks in below. Checked per unique source word (ids deduplicated by
+  // source_table), so repeats of the same number cost nothing extra.
+  bool source_has_digit = false;
+
   // Collect unique words from source.
   // Add aligned target words: mark target_table[word] to 1
   for (auto word : words) {
@@ -162,6 +179,7 @@ Shortlist ShortlistGenerator::generate(const Words& words,
     // If word has not been encountered, add the corresponding target
     // words
     if (!source_table[word]) {
+      source_has_digit = source_has_digit || source_.is_digit_piece(word);
       size_t begin = word_to_offset_[word];
       size_t end = word_to_offset_[word + 1];
       for (uint64_t j = begin; j < end; j++) {
@@ -189,6 +207,40 @@ Shortlist ShortlistGenerator::generate(const Words& words,
     if (!target_table[i]) {
       target_table[i] = true;
       target_table_ones++;
+    }
+  }
+
+  // Digit forcing: when the source carries a digit, admit the most frequent
+  // digit-only target pieces (up to kDigitAdmissionCap; digit_targets_ is
+  // in frequency order) so the decode can render each number in whichever
+  // short segmentation the model prefers ("404" as ▁404, ▁4+04, ▁40+4).
+  // All 1- and 2-digit chunks are always inside the cap, so any number
+  // stays copyable; what the cap trims is only the long tail of rare
+  // long-number specials. This runs after the frequency top-up, never
+  // before: the candidates the budget exists to supply (glue, casing,
+  // punctuation, common subwords) must not be displaced by number pieces,
+  // so the shortlist grows by up to cap + alignment slack on digit rows
+  // instead of redistributing the budget. Admission can break the
+  // multiple-of-eight the top-up just established; restore it the same way,
+  // by taking a few more frequent words. Same guard as the top-up: stop at
+  // the vocabulary boundary if the multiple is unrestorable (degenerate
+  // tiny vocabularies).
+  if (source_has_digit) {
+    size_t digit_admissions = 0;
+    for (Word digit : digit_targets_) {
+      if (digit_admissions >= kDigitAdmissionCap) break;
+      if (!target_table[digit]) {
+        target_table[digit] = true;
+        target_table_ones++;
+        ++digit_admissions;
+      }
+    }
+    for (size_t i = frequent_;
+         i < target_size && target_table_ones % kVExtAlignment != 0; i++) {
+      if (!target_table[i]) {
+        target_table[i] = true;
+        target_table_ones++;
+      }
     }
   }
 

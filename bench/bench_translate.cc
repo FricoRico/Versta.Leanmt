@@ -40,6 +40,7 @@ struct Args {
   size_t warmup = 5;
   size_t batch = 1;
   size_t threads = 0;  // 0 = keep the process default (1 or LEANMT_THREADS)
+  bool digits = false;  // numeric corpus rows (digit-forcing watch, NEU-30)
   std::string json_path;
 };
 
@@ -47,7 +48,8 @@ void usage(const char* argv0) {
   std::fprintf(stderr,
                "usage: %s --model <model.bin> --vocab <vocab.spm> --shortlist "
                "<lex.s2t.bin> [--lengths 8,24,60,120] [--iterations N] "
-               "[--warmup N] [--batch N] [--threads N] [--json out.json]\n",
+               "[--warmup N] [--batch N] [--threads N] [--digits] "
+               "[--json out.json]\n",
                argv0);
 }
 
@@ -69,6 +71,7 @@ bool parse(int argc, char** argv, Args& args) {
     else if (arg == "--warmup") args.warmup = std::stoul(need(i, "--warmup"));
     else if (arg == "--batch") args.batch = std::stoul(need(i, "--batch"));
     else if (arg == "--threads") args.threads = std::stoul(need(i, "--threads"));
+    else if (arg == "--digits") args.digits = true;
     else if (arg == "--json") args.json_path = need(i, "--json");
     else if (arg == "--lengths") {
       std::string csv = need(i, "--lengths");
@@ -114,6 +117,37 @@ std::string sentence_of_length(size_t words, size_t offset = 0) {
   return out;
 }
 
+// Numeric variant (NEU-30 digit-forcing watch): same construction, but every
+// sixth word is replaced by a number from a fixed pool; word count is
+// preserved so rows stay comparable to the word-pool rows at each length.
+// Deterministic: neither pool nor rotation depends on RNG state. Worst case
+// for the shortlist generator: every sentence carries digits, so these rows
+// watch the force-admitted |digit pieces| shortlist growth on hot input.
+std::string digit_sentence_of_length(size_t words, size_t offset = 0) {
+  static const char* kNumbers[] = {"404",   "12.50", "7",     "1835",
+                                   "23",    "2.5",   "90.00", "6",
+                                   "2026",  "31",    "50.50", "22:00"};
+  constexpr size_t kNumSize = sizeof(kNumbers) / sizeof(kNumbers[0]);
+  constexpr size_t kEvery = 6;
+  std::istringstream in(sentence_of_length(words, offset));
+  std::string out;
+  std::string word;
+  size_t index = 0;
+  while (in >> word) {
+    if (index) out += ' ';
+    if (index % kEvery == kEvery - 1) {
+      // Keep the trailing punctuation of the replaced word, if any.
+      char tail = word.back() == '.' ? '.' : '\0';
+      out += kNumbers[(index / kEvery + offset) % kNumSize];
+      if (tail) out += tail;
+    } else {
+      out += word;
+    }
+    ++index;
+  }
+  return out;
+}
+
 // Peak RSS in KiB. Prefers /proc/self/status VmHWM (high-water mark, Linux) —
 // ru_maxrss is the fallback. Monotonic per process: the value can only grow
 // during the run, which is exactly what a regression watch wants.
@@ -139,16 +173,23 @@ struct Result {
   size_t iterations;
   double min_ms, median_ms, p95_ms, max_ms;
   long rss_start_kib, rss_end_kib;
+  // Generated target pieces per iteration (sum over the batch). Makes
+  // latency interpretable when an output-affecting change alters decode
+  // length: compare latency per generated step, not per sentence (digit
+  // rows: forcing can change how many pieces the decoder emits).
+  size_t output_tokens = 0;
 };
 
 Result run_length(leanmt::Blocking& service, const leanmt::Ptr<leanmt::Model>& model,
-                  size_t words, size_t batch, size_t iterations, size_t warmup) {
+                  size_t words, size_t batch, size_t iterations, size_t warmup,
+                  bool digits) {
   // A batch of distinct sentences (rotated word-pool offsets): batch=1 keeps
   // the historical single-sentence behaviour verbatim.
   std::vector<std::string> sentences;
   sentences.reserve(batch);
   for (size_t b = 0; b < batch; ++b) {
-    sentences.push_back(sentence_of_length(words, b * 7));
+    sentences.push_back(digits ? digit_sentence_of_length(words, b * 7)
+                               : sentence_of_length(words, b * 7));
   }
   leanmt::Options options;
 
@@ -159,13 +200,22 @@ Result run_length(leanmt::Blocking& service, const leanmt::Ptr<leanmt::Model>& m
   long rss_start = rss_peak_kib();
   std::vector<double> timings_ms;
   timings_ms.reserve(iterations);
+  size_t output_tokens_total = 0;
   for (size_t i = 0; i < iterations; ++i) {
     auto started = std::chrono::steady_clock::now();
-    (void)service.translate(model, sentences, options);
+    auto responses = service.translate(model, sentences, options);
     auto ended = std::chrono::steady_clock::now();
     timings_ms.push_back(
         std::chrono::duration<double, std::milli>(ended - started).count());
+    for (const auto& response : responses) {
+      for (size_t s = 0; s < response.size(); ++s) {
+        output_tokens_total += response.target.annotation.word_count(s);
+      }
+    }
   }
+  // Decode is deterministic, so every iteration emits the same count;
+  // keep a per-iteration figure robust to integer division anyway.
+  const size_t output_tokens = output_tokens_total / iterations;
   long rss_end = rss_peak_kib();
 
   std::sort(timings_ms.begin(), timings_ms.end());
@@ -181,7 +231,8 @@ Result run_length(leanmt::Blocking& service, const leanmt::Ptr<leanmt::Model>& m
                 pct(0.95),
                 timings_ms.back(),
                 rss_start,
-                rss_end};
+                rss_end,
+                output_tokens};
 }
 
 std::string arch_string() {
@@ -237,21 +288,23 @@ int main(int argc, char** argv) {
 
   std::vector<Result> results;
   for (size_t words : args.lengths) {
-    results.push_back(
-        run_length(service, model, words, args.batch, args.iterations, args.warmup));
+    results.push_back(run_length(service, model, words, args.batch,
+                                 args.iterations, args.warmup, args.digits));
   }
 
-  std::printf("\n## leanmt bench (arch=%s, threads=%zu, batch=%zu, model=%s)\n\n",
-              arch_string().c_str(), leanmt::qmm::num_threads(), args.batch,
-              "ende.student.tiny11 int8 (pinned)");
+  std::printf(
+      "\n## leanmt bench (arch=%s, threads=%zu, batch=%zu, corpus=%s, model=%s)\n\n",
+      arch_string().c_str(), leanmt::qmm::num_threads(), args.batch,
+      args.digits ? "digits" : "word-pool",
+      "ende.student.tiny11 int8 (pinned)");
   std::printf("model load: %.1f ms | RSS start: %ld KiB | peak after load: %ld KiB\n\n",
               load_ms, rss_baseline, rss_peak_kib());
-  std::printf("| words | batch | iters | min ms | median ms | p95 ms | max ms | RSS peak KiB |\n");
-  std::printf("|------:|------:|------:|-------:|----------:|-------:|-------:|-------------:|\n");
+  std::printf("| words | batch | iters | min ms | median ms | p95 ms | max ms | out pieces/iter | RSS peak KiB |\n");
+  std::printf("|------:|------:|------:|-------:|----------:|-------:|-------:|----------------:|-------------:|\n");
   for (const Result& r : results) {
-    std::printf("| %5zu | %5zu | %5zu | %7.3f | %10.3f | %7.3f | %7.3f | %12ld |\n",
+    std::printf("| %5zu | %5zu | %5zu | %7.3f | %10.3f | %7.3f | %7.3f | %14zu | %12ld |\n",
                 r.words, r.batch, r.iterations, r.min_ms, r.median_ms, r.p95_ms,
-                r.max_ms, r.rss_end_kib);
+                r.max_ms, r.output_tokens, r.rss_end_kib);
   }
   std::printf("\n");
 
@@ -259,6 +312,8 @@ int main(int argc, char** argv) {
     std::ofstream json(args.json_path);
     json << "{\n  \"tool\": \"leanmt-bench\",\n"
          << "  \"arch\": \"" << arch_string() << "\",\n"
+         << "  \"corpus\": \"" << (args.digits ? "digits" : "word-pool")
+         << "\",\n"
          << "  \"threads\": " << leanmt::qmm::num_threads() << ",\n"
          << "  \"batch\": " << args.batch << ",\n"
          << "  \"model\": \"ende.student.tiny11 v2 (pinned sha256)\",\n"
@@ -272,6 +327,7 @@ int main(int argc, char** argv) {
            << ", \"iterations\": " << r.iterations
            << ", \"min_ms\": " << r.min_ms << ", \"median_ms\": " << r.median_ms
            << ", \"p95_ms\": " << r.p95_ms << ", \"max_ms\": " << r.max_ms
+           << ", \"output_tokens\": " << r.output_tokens
            << ", \"rss_peak_kib\": " << r.rss_end_kib << "}"
            << (i + 1 < results.size() ? "," : "") << "\n";
     }

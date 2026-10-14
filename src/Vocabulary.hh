@@ -37,6 +37,36 @@ class Vocabulary {
            static_cast<unsigned char>(piece[2]) == 0x81;
   }
 
+  // Whether `word`'s piece consists of ASCII digits only (0-9), ignoring a
+  // leading metaspace marker: both word-start ("▁404") and continuation
+  // ("04") number pieces qualify. Mixed pieces ("1st", "B52"), the bare
+  // marker, control symbols and out-of-range ids do not. Numbers must stay
+  // copyable no matter what segmentations the lexical shortlist table
+  // learned, so the shortlist generator keys on this to admit every
+  // digit-only target piece whenever the source carries one.
+  //
+  // Single IdToPiece lookup: the marker is stripped inline (three fixed
+  // bytes) rather than via is_word_start(), which would look the piece up
+  // a second time. Scope is deliberately ASCII — the pairs we ship write
+  // prices, times and addresses in 0-9; generalizing to Unicode Nd is a
+  // separate decision (see the pair-roster risk note in NEU-30).
+  bool is_digit_piece(Word word) const {
+    if (word >= size()) return false;
+    const std::string &piece = processor_.IdToPiece(static_cast<int>(word));
+    size_t begin = 0;
+    if (piece.size() >= 3 &&
+        static_cast<unsigned char>(piece[0]) == 0xE2 &&
+        static_cast<unsigned char>(piece[1]) == 0x96 &&
+        static_cast<unsigned char>(piece[2]) == 0x81) {
+      begin = 3;  // strip "▁"
+    }
+    if (begin == piece.size()) return false;
+    return std::all_of(piece.begin() + static_cast<std::ptrdiff_t>(begin),
+                       piece.end(), [](char c) {
+                         return std::isdigit(static_cast<unsigned char>(c));
+                       });
+  }
+
   // Whether `word` ends the current word: it starts a new word (▁), or its
   // piece begins with ASCII punctuation (a standalone token like "." or ","
   // that attaches without a space). Mid-word continuation subwords — including

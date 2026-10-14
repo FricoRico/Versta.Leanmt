@@ -27,3 +27,14 @@ leanmt_add_test(vocabulary_test vocabulary_test.cc)
 leanmt_add_test(text_processor_test text_processor_test.cc)
 leanmt_add_test(model_test model_test.cc)
 leanmt_add_test(frontend_test frontend_test.cc)
+leanmt_add_test(shortlist_test shortlist_test.cc)
+
+# Numeric-fidelity gate (NEU-30): a ctest-registered CLI rather than a
+# leanmt_test.hh case — it needs its own exit-code contract (failure =
+# digit-copy fidelity below the required rate) and report/dump flags for
+# golden-diff tables. Default gate: 95% row exact-match on the pinned
+# 100-sentence numeric travel corpus.
+leanmt_add_test(numeric_fidelity_test numeric_fidelity_test.cc)
+target_compile_definitions(
+  numeric_fidelity_test
+  PRIVATE LEANMT_NUMERIC_DEFAULT_CORPUS="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/numeric/travel_ende_100.txt")

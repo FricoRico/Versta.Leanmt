@@ -70,4 +70,50 @@ TEST("word boundary helpers classify sentencepiece pieces") {
   CHECK(vocab.ends_word(vocab.size() + 7));
 }
 
+TEST("is_digit_piece classifies digit-only pieces (with and without ▁)") {
+  REQUIRE_FIXTURE();
+  leanmt::Vocabulary vocab(vocab_path());
+
+  // Digit-only strings tokenize to digit-only pieces, both word-start
+  // (▁-prefixed) and continuation pieces — every piece of every encode
+  // below must classify as a digit piece.
+  for (const char* digits : {"404", "7", "7392846", "06", "12000"}) {
+    auto [words, views] = vocab.encode(digits, false);
+    REQUIRE(!words.empty());
+    for (leanmt::Word word : words) {
+      CHECK(vocab.is_digit_piece(word));
+    }
+  }
+
+  // Word-start and continuation digit pieces both occur in context:
+  // "Room 404" yields a digit-only final piece (marked or continuation,
+  // depending on context segmentation).
+  auto [room, room_views] = vocab.encode("Room 404", false);
+  REQUIRE(room.size() >= 2);
+  CHECK(vocab.is_digit_piece(room.back()));
+
+  // Words and punctuation carry no digit-only pieces.
+  for (const char* text : {"the", "station", ".", ","}) {
+    auto [words, views] = vocab.encode(text, false);
+    for (leanmt::Word word : words) {
+      CHECK(!vocab.is_digit_piece(word));
+    }
+  }
+
+  // Mixed tokens like "B52" legitimately split into a letter piece plus a
+  // digit-only continuation ("52"): at least one piece must classify as
+  // non-digit (the part holding the letter), while digit-only parts may.
+  auto [mixed, mixed_views] = vocab.encode("B52", false);
+  bool any_nondigit = false;
+  for (leanmt::Word word : mixed) {
+    any_nondigit = any_nondigit || !vocab.is_digit_piece(word);
+  }
+  CHECK(any_nondigit);
+
+  // Out-of-range and special ids are not digit pieces.
+  CHECK(!vocab.is_digit_piece(vocab.size() + 7));
+  CHECK(!vocab.is_digit_piece(vocab.eos_id()));
+  CHECK(!vocab.is_digit_piece(vocab.pad_id()));
+}
+
 int main() { return leanmt::test::run_all(); }
