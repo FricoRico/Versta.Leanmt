@@ -210,22 +210,29 @@ Shortlist ShortlistGenerator::generate(const Words& words,
     }
   }
 
-  // Digit forcing: when the source carries a digit, admit every digit-only
-  // target piece so the decode can render each number in whichever
-  // segmentation the model prefers ("404" as ▁404, ▁4+04, ▁40+4, ...).
-  // This runs after the frequency top-up, never before: the candidates the
-  // budget exists to supply (glue, casing, punctuation, common subwords)
-  // must not be displaced by number pieces, so the shortlist grows by up to
-  // |digit_targets_| + alignment slack on digit rows instead of
-  // redistributing the budget. Admission can break the multiple-of-eight
-  // the top-up just established; restore it the same way, by taking a few
-  // more frequent words. Same guard as the top-up: stop at the vocabulary
-  // boundary if the multiple is unrestorable (degenerate tiny vocabularies).
+  // Digit forcing: when the source carries a digit, admit the most frequent
+  // digit-only target pieces (up to kDigitAdmissionCap; digit_targets_ is
+  // in frequency order) so the decode can render each number in whichever
+  // short segmentation the model prefers ("404" as ▁404, ▁4+04, ▁40+4).
+  // All 1- and 2-digit chunks are always inside the cap, so any number
+  // stays copyable; what the cap trims is only the long tail of rare
+  // long-number specials. This runs after the frequency top-up, never
+  // before: the candidates the budget exists to supply (glue, casing,
+  // punctuation, common subwords) must not be displaced by number pieces,
+  // so the shortlist grows by up to cap + alignment slack on digit rows
+  // instead of redistributing the budget. Admission can break the
+  // multiple-of-eight the top-up just established; restore it the same way,
+  // by taking a few more frequent words. Same guard as the top-up: stop at
+  // the vocabulary boundary if the multiple is unrestorable (degenerate
+  // tiny vocabularies).
   if (source_has_digit) {
+    size_t digit_admissions = 0;
     for (Word digit : digit_targets_) {
+      if (digit_admissions >= kDigitAdmissionCap) break;
       if (!target_table[digit]) {
         target_table[digit] = true;
         target_table_ones++;
+        ++digit_admissions;
       }
     }
     for (size_t i = frequent_;

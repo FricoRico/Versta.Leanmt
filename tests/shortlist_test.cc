@@ -6,6 +6,7 @@
 // alignment multiple holds, and the digit-row size growth stays bounded.
 
 #include <algorithm>
+#include <cstdio>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -65,7 +66,7 @@ bool contains(const leanmt::Words& words, leanmt::Word id) {
 
 }  // namespace
 
-TEST("digit source admits every digit-only target piece") {
+TEST("digit source force-admits digit pieces, chunks always in scope") {
   REQUIRE_FIXTURE();
   Generator g;
 
@@ -75,17 +76,44 @@ TEST("digit source admits every digit-only target piece") {
       g.shortlist.generate(words, leanmt::ShortlistGenerator::kMinCandidates);
   const leanmt::Words& admitted = words_of(shortlist);
 
-  // Structural guarantee: scan the target vocabulary independently and
-  // require every digit-only piece to be present.
-  size_t digit_pieces = 0;
+  // Copyability guarantee: every 1- and 2-digit chunk piece must always be
+  // admitted — with those, any number is composable in some segmentation,
+  // independent of the lexical table. (Digit targets are frequency-ordered
+  // and the admission cap sits above the chunk ranks — verified on this
+  // vocabulary by construction below.)
+  for (const char* one : {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"}) {
+    auto [run_ids, run_views] = g.vocab.encode(one, false);
+    REQUIRE(!run_ids.empty());
+    for (leanmt::Word piece : run_ids) {
+      CHECK(g.vocab.is_digit_piece(piece));
+      CHECK(contains(admitted, piece));
+    }
+  }
+  for (int n = 0; n <= 99; ++n) {
+    char two[3];
+    std::snprintf(two, sizeof(two), "%02d", n);
+    auto [run_ids, run_views] = g.vocab.encode(two, false);
+    for (leanmt::Word piece : run_ids) {
+      if (g.vocab.is_digit_piece(piece)) {
+        CHECK(contains(admitted, piece));
+      }
+    }
+  }
+
+  // Full-vocabulary scan: the shortlist contains at least as many digit
+  // pieces as the admission cap (or every digit piece, when the vocabulary
+  // has fewer than the cap).
+  size_t digit_pieces = 0, digit_admitted = 0;
   for (size_t i = 0; i < g.vocab.size(); i++) {
     auto id = static_cast<leanmt::Word>(i);
     if (g.vocab.is_digit_piece(id)) {
       ++digit_pieces;
-      CHECK(contains(admitted, id));
+      digit_admitted += contains(admitted, id);
     }
   }
   CHECK(digit_pieces > 100);  // sanity: the scan actually found digits
+  CHECK(digit_admitted >=
+        std::min(digit_pieces, leanmt::ShortlistGenerator::kDigitAdmissionCap));
 
   // Vector-extension alignment must hold after forcing.
   CHECK_EQ(admitted.size() % leanmt::ShortlistGenerator::kVExtAlignment, 0u);
@@ -111,21 +139,21 @@ TEST("digit-row shortlist stays within the documented worst-case bound") {
   CHECK_EQ(admitted.size() % leanmt::ShortlistGenerator::kVExtAlignment, 0u);
 
   // Absolute worst case: |shortlist| <= align8(max(min_candidates, S)) +
-  // 2 * alignment, where S is the pre-top-up union size (frequent band +
-  // lexical rows). S isn't directly observable; but generate(words, 0) is
-  // an observable upper bound on it (its result is that same union topped
-  // up only to the nearest multiple of eight — on this digit input it also
-  // contains the forced digit pieces, which only loosens the bound). With
-  // |digit_targets_| admissions and one re-alignment on top:
-  //
-  //   |admitted| <= align8(max(min_candidates, base)) + |digit pieces| + 8
+  // min(|digit pieces|, kDigitAdmissionCap) + alignment slack, where S is
+  // the pre-top-up union size (frequent band + lexical rows). S isn't
+  // directly observable; but generate(words, 0) is an observable upper
+  // bound on it (its result is that same union topped up only to the
+  // nearest multiple of eight — on this digit input it also contains the
+  // forced digit pieces, which only loosens the bound).
   size_t base = g.shortlist.generate(digit_words, 0).words().size();
   size_t bound_base = std::max(base, leanmt::ShortlistGenerator::kMinCandidates);
   bound_base += leanmt::ShortlistGenerator::kVExtAlignment -
                 bound_base % leanmt::ShortlistGenerator::kVExtAlignment;
   CHECK(admitted.size() <=
-           bound_base + digit_pieces +
-               leanmt::ShortlistGenerator::kVExtAlignment);
+        bound_base +
+            std::min(digit_pieces,
+                     leanmt::ShortlistGenerator::kDigitAdmissionCap) +
+            leanmt::ShortlistGenerator::kVExtAlignment);
 
   // No-digit inputs see no forcing at all (the admission pass is gated on a
   // source digit); the byte-identical pinned frontend goldens guard that

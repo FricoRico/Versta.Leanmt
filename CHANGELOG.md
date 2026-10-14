@@ -15,23 +15,33 @@ slimt/bergamot lineage; upstream syncs list their source commits.
   tables, digits get dropped or doubled in the output (prices, times,
   addresses). `Vocabulary::is_digit_piece` classifies digit-only pieces, the
   generator scans the target vocabulary once at load, and `generate()`
-  force-admits every digit-only target piece whenever the source carries a
-  digit — after the frequency top-up, so digit pieces never displace the
-  candidates the budget exists to supply; the multiple-of-eight vector
-  alignment is restored on top. **Output-affecting by construction (decode
-  candidates grow on digit rows); measured zero byte-drift on the pinned
-  ende-tiny11 fixture** (3-sentence golden suite + 100-sentence numeric
-  corpus, both identical before/after — the defect is latent on this
-  fixture; the fix converts an empirical property into a structural
-  guarantee and arms CI to catch a regression). Worst case shortlist grows
-  1000 → ≤ align8(1000 + |digit pieces|) (tiny11: 778 digit pieces → ≤ 1784)
-  on digit rows only; no-digit inputs are untouched. Validation: new
-  shortlist unit tests (admission completeness, alignment invariant,
-  worst-case bound, number segmentation reachability), vocabulary
-  classification tests, numeric-fidelity gate at 95% row exact-match
-  (measures 100.0% pre- and post-fix on the fixture corpus), pinned
-  goldens byte-identical. Approach informed by the reference fork
-  DavidVentura/slimt@2beb403 — implementation is ours; risk note on the PR.
+  force-admits the most frequent digit-only target pieces whenever the
+  source carries a digit — after the frequency top-up, so digit pieces
+  never displace the candidates the budget exists to supply; the
+  multiple-of-eight vector alignment is restored on top. Admission is
+  capped at `kDigitAdmissionCap = 512` (frequency order; all 1- and 2-digit
+  chunks are always inside the cap, so every number stays copyable
+  chunk-wise — rare long-number specials are what the cap trims; the table
+  may still supply them). Worst case shortlist on digit rows is
+  align8(1000 + 512) = 1512 vs. 1000 before; no-digit inputs are untouched
+  (byte-identical shortlists by construction — pinned goldens cover this).
+  **Output-affecting by construction; measured zero byte-drift on the
+  pinned ende-tiny11 fixture** (3-sentence golden suite + 100-sentence
+  numeric corpus dump + 12k-sentence adversarial code sweep — all identical
+  before/after; the defect is latent on this fixture, so the change is a
+  structural guarantee + permanent CI gate rather than a behavior fix
+  there). Validation: new shortlist unit tests (chunk-coverage guarantee,
+  admission-count bound, alignment invariant, worst-case size bound, digit
+  decode round-trip), vocabulary classification tests, numeric-fidelity
+  ctest gate at 95% (measures 100.0% pre/post), goldens byte-identical.
+  Perf, reference arm64 (ubuntu-24.04-arm, CI git notes): digit rows
+  +1.6..+3.5% median at 8/24/60 words; the synthetic 120-word
+  digit-saturated row shows a non-linear +148% that is *insensitive to the
+  admission volume* (cap 256/512/uncapped all ≈ +150%) — not the forcing
+  itself; filed as NEU-81 for profile-driven root cause. Peak RSS +2.7% worst row
+  (larger shortlisted projection matrix). Approach informed by the
+  reference fork DavidVentura/slimt@2beb403 — implementation is ours; risk
+  note on the PR.
 
 ### Added (NEU-30)
 

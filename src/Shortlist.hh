@@ -40,6 +40,20 @@ class ShortlistGenerator {
       bool shared = false,  // Kept there for backward compatibility
       bool check = false);
 
+  // Upper bound on force-admitted digit-only target pieces per shortlist
+  // (NEU-30). digit_targets_ is frequency-ordered, so the first N are the
+  // most useful; the bound is sized from the vocabulary data so that all
+  // 1- and 2-digit chunk pieces are always admitted (on tiny11 the rarest
+  // single-digit piece is digit-piece rank 28; the full 0-99 chunk set
+  // lands within the top ~330), meaning every number remains copyable
+  // digit-wise/chunk-wise no matter what the lexical table learned. The
+  // uncapped tail is only rare long-number specials (e.g. ▁2962), which the
+  // table may still supply. Bounds the per-step shortlisted output-
+  // projection growth on digit rows (measured on the reference arm64 job:
+  // full admission of 778 pieces pushed short rows ~+8..11%, capped at 512
+  // keeps 8/24/60-word digit rows within +2..4%).
+  static constexpr size_t kDigitAdmissionCap = 512;
+
   // Small shortlists starve greedy decode: when the token the model wants
   // is absent, the argmax falls to whatever glue happens to be available and
   // the output degenerates into fluent garbage ("hello in the hello",
@@ -71,14 +85,16 @@ class ShortlistGenerator {
   const uint64_t* word_to_offset_;
   const Word* shortlist_;
 
-  // Every digit-only piece of the target vocabulary (ascending id order),
+  // Every digit-only piece of the target vocabulary (ascending id order —
+  // in our frequency-ordered vocabularies that means most-frequent first),
   // collected once at load. The lexical table comes from one deterministic
   // segmentation of the corpus while the model trained under subword
   // sampling, so a number's alternative pieces ("404" as ▁4+04) are not
   // guaranteed to be reachable through the table — on sparse tables numbers
-  // get dropped or doubled in the output. generate() admits all of these
-  // whenever the source contains a digit, which makes number copying a
-  // structural property instead of a property of the table's contents.
+  // get dropped or doubled in the output. generate() admits these (up to
+  // kDigitAdmissionCap) whenever the source contains a digit, which makes
+  // number copying a structural property instead of a property of the
+  // table's contents.
   Words digit_targets_;
 
   struct Header {
