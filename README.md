@@ -225,6 +225,51 @@ regressions before merging performance work. Regression baselines live in
 `bench/baselines/`; only numbers produced on the CI arm64 runner are valid
 there (see that directory's README for the provenance contract).
 
+## Batch translation (file → file)
+
+`leanmt-bench translate` is the batch file→file mode of the same binary
+(NEU-50; versioned CLI spec `versta.engine-cli/1`, mirrored in
+Versta.Models `versta/leanmt.py` and PIPELINE.md "leanmt translate CLI"). It
+exists so the quality harness (`versta.eval`) can score the shipped engine +
+shipped model bundle as a black box:
+
+```bash
+./build/bench/leanmt-bench translate \
+    --model model.intgemm.alphas.bin --vocab vocab.deen.spm \
+    --shortlist lex.s2t.bin \
+    --input sentences.txt --output translations.txt \
+    --threads 4 --beam 3
+```
+
+Contract (stable within a spec version; bumping the spec is a deliberate,
+coordinated event):
+
+- Reads UTF-8 sentences from `--input`, one per line. CRLF is tolerated; a
+  blank line aborts the run with the offending line number — segmentation is
+  owned upstream of this CLI and a silently-dropped blank would corrupt line
+  alignment.
+- Writes exactly one translation per input line to `--output`, in order,
+  each followed by `\n` (including the last). A translation carrying a raw
+  newline aborts the run instead of corrupting alignment. Nothing but the
+  translations is written to the output file; progress and the effective
+  configuration go to stderr.
+- Exit codes: `0` success, `1` runtime failure (unreadable/invalid input,
+  model-load error, decode failure, unwritable output), `2` usage error.
+- Deterministic for a fixed model + decode settings: ruy never splits the
+  reduction (bit-identical output at any `--threads` value) and batched
+  decode is row-wise identical to single-line decode (pinned by
+  `tests/frontend_test.cc`). The translation cache is disabled in this mode.
+- Decode settings are engine defaults unless pinned by flags: `--threads N`
+  (ruy intra-op budget; `LEANMT_THREADS` env when the flag is absent),
+  `--beam N` (beam-width cap for the robust re-decode, default 3, `1` =
+  greedy), `--batch N` (lines per `translate()` call — performance knob only,
+  output is batch-size invariant). `leanmt-bench --version` prints the
+  engine + CLI spec versions for the harness to record.
+
+Two-vocabulary models (split `encoder_Wemb`/`decoder_Wemb`, e.g. ja/zh) also
+need `--target-vocab` — same fail-fast rule as the library (NEU-26). The
+flag exists in bench mode as well.
+
 ## Threading (intra-op)
 
 leanmt translates on the caller's thread (`Blocking`) or per-request worker
