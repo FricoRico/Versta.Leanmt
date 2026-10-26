@@ -67,6 +67,7 @@ src/              # the C++ inference library (namespace leanmt)
   qmm/             # ruy-backed quantized matrix-multiply
   simd/            # per-ISA SIMD implementations (neon, sse)
 third_party/      # bundled ruy and sentencepiece submodules
+probe/            # pack-acceptance probe (host tooling; LEANMT_BUILD_PROBE, NEU-60)
 ```
 
 Public headers install into `<prefix>/include/leanmt`, and the library target
@@ -100,6 +101,13 @@ cmake --build build --target all
 ```
 
 This produces the `leanmt` shared/static library under `build/`.
+
+Host tooling is opt-in: `-DLEANMT_BUILD_TESTS=ON` (ctest unit tests),
+`-DLEANMT_BUILD_BENCH=ON` (`bench/leanmt-bench` latency/RSS harness) and
+`-DLEANMT_BUILD_PROBE=ON` (`probe/leanmt-probe`, the pack-acceptance probe the
+Versta.Models acceptance harness drives — one bundle direction in, probe
+corpus through, JSON with per-sentence translations + latency, load time and
+peak RSS out; see NEU-60).
 
 ### Android (NDK + JNI)
 
