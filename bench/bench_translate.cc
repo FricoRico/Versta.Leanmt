@@ -12,6 +12,8 @@
 //                [--target-vocab <vocab.spm>] --shortlist <lex.s2t.bin>
 //                --input <in.txt> --output <out.txt>
 //                [--threads N] [--beam N] [--batch N]
+//                [--encoder_layers N] [--decoder_layers N]
+//                [--ffn_depth N] [--num_heads N]
 //
 //   leanmt-bench --version — print engine + CLI spec versions and exit.
 //
@@ -239,7 +241,11 @@ std::string arch_string() {
 //    decode is row-wise identical to single-line decode (pinned by
 //    frontend_test); the translation cache is disabled in this mode;
 //  * decode settings are engine defaults unless pinned by flags; the
-//    effective settings are echoed to stderr for the audit trail.
+//    effective settings are echoed to stderr for the audit trail;
+//  * model architecture flags mirror leanmt-probe's additive, optional
+//    overrides (defaults are exactly Model::Config's, so behavior without
+//    them is unchanged); a depth mismatch against the model file aborts at
+//    load with exit 1 (NEU-134) instead of translating into exit-0 garbage.
 // ---------------------------------------------------------------------------
 
 struct TranslateArgs {
@@ -252,6 +258,12 @@ struct TranslateArgs {
   size_t threads = 0;  // 0 = keep the process default (1 or LEANMT_THREADS)
   size_t beam = 3;     // Options::max_beam_width default; 1 = greedy
   size_t batch = 64;   // lines per translate() call; perf-only knob
+  // Model architecture overrides (NEU-134); defaults == Model::Config's.
+  // Flag names mirror leanmt-probe (--encoder_layers/--decoder_layers/...).
+  size_t encoder_layers = 6;
+  size_t decoder_layers = 2;
+  size_t ffn_depth = 2;
+  size_t num_heads = 8;
 };
 
 void translate_usage(const char* argv0) {
@@ -260,6 +272,8 @@ void translate_usage(const char* argv0) {
                "           [--target-vocab <vocab.spm>] --shortlist <lex.s2t.bin>\n"
                "           --input <sentences.txt> --output <translations.txt>\n"
                "           [--threads N] [--beam N] [--batch N]\n"
+               "           [--encoder_layers N] [--decoder_layers N]\n"
+               "           [--ffn_depth N] [--num_heads N]\n"
                "\n"
                "Batch file→file translation (spec %s). Reads UTF-8\n"
                "sentences from --input, one per line, and writes exactly one\n"
@@ -268,12 +282,17 @@ void translate_usage(const char* argv0) {
                "translation\"). Exit codes: 0 success, 1 runtime failure,\n"
                "2 usage error.\n"
                "\n"
-               "  --threads N      ruy intra-op threads (default: LEANMT_THREADS\n"
-               "                   env, else 1)\n"
-               "  --beam N         beam-width cap for the robust re-decode\n"
-               "                   (default 3; 1 = greedy)\n"
-               "  --batch N        lines per translate() call; performance knob\n"
-               "                   only, output is batch-size invariant (default 64)\n",
+               "  --threads N        ruy intra-op threads (default: LEANMT_THREADS\n"
+               "                     env, else 1)\n"
+               "  --beam N           beam-width cap for the robust re-decode\n"
+               "                     (default 3; 1 = greedy)\n"
+               "  --batch N          lines per translate() call; performance knob\n"
+               "                     only, output is batch-size invariant\n"
+               "                     (default 64)\n"
+               "  --encoder_layers N model architecture overrides matching\n"
+               "  --decoder_layers N Model::Config (defaults 6/2/2/8); a depth\n"
+               "  --ffn_depth N      mismatch against the model file aborts at\n"
+               "  --num_heads N      load with exit 1, naming both sides\n",
                argv0, kCliSpec);
 }
 
@@ -315,6 +334,10 @@ bool parse_translate(int argc, char** argv, TranslateArgs& args) {
     else if (arg == "--threads") args.threads = parse_size(need(i, "--threads"), "--threads", argv[0]);
     else if (arg == "--beam") args.beam = parse_size(need(i, "--beam"), "--beam", argv[0]);
     else if (arg == "--batch") args.batch = parse_size(need(i, "--batch"), "--batch", argv[0]);
+    else if (arg == "--encoder_layers") args.encoder_layers = parse_size(need(i, "--encoder_layers"), "--encoder_layers", argv[0]);
+    else if (arg == "--decoder_layers") args.decoder_layers = parse_size(need(i, "--decoder_layers"), "--decoder_layers", argv[0]);
+    else if (arg == "--ffn_depth") args.ffn_depth = parse_size(need(i, "--ffn_depth"), "--ffn_depth", argv[0]);
+    else if (arg == "--num_heads") args.num_heads = parse_size(need(i, "--num_heads"), "--num_heads", argv[0]);
     else {
       std::fprintf(stderr, "unknown argument: %s\n", arg.c_str());
       translate_usage(argv[0]);
@@ -368,7 +391,12 @@ int run_translate(const TranslateArgs& args) {
         .target_vocabulary = args.target_vocabulary,
         .shortlist = args.shortlist,
     };
-    auto model = std::make_shared<leanmt::Model>(leanmt::Model::Config{}, files);
+    leanmt::Model::Config model_config;
+    model_config.encoder_layers = args.encoder_layers;
+    model_config.decoder_layers = args.decoder_layers;
+    model_config.feed_forward_depth = args.ffn_depth;
+    model_config.num_heads = args.num_heads;
+    auto model = std::make_shared<leanmt::Model>(model_config, files);
     leanmt::Config service_config{};
     service_config.cache_size = 0;  // decode-only CLI: no memoization anywhere
     leanmt::Blocking service(service_config);
@@ -381,9 +409,12 @@ int run_translate(const TranslateArgs& args) {
 
     std::fprintf(stderr,
                  "leanmt-bench translate (%s): model=%s lines=%zu "
-                 "threads=%zu beam=%zu batch=%zu cache=0 load=%.1f ms\n",
+                 "threads=%zu beam=%zu batch=%zu cache=0 enc=%zu dec=%zu "
+                 "ffn=%zu heads=%zu load=%.1f ms\n",
                  kCliSpec, args.model.c_str(), lines.size(),
-                 leanmt::qmm::num_threads(), args.beam, args.batch, load_ms);
+                 leanmt::qmm::num_threads(), args.beam, args.batch,
+                 args.encoder_layers, args.decoder_layers, args.ffn_depth,
+                 args.num_heads, load_ms);
 
     auto translate_start = std::chrono::steady_clock::now();
     std::vector<std::string> translations;

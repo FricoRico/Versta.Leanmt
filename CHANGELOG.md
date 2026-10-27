@@ -5,6 +5,32 @@ slimt/bergamot lineage; upstream syncs list their source commits.
 
 ## [Unreleased]
 
+### Fixed (NEU-134)
+
+- **Silent corruption on architecture-mismatched model loads.** The shipped
+  base-memory packs carry a 4-layer decoder, but `leanmt-bench translate`
+  constructed `Model::Config{}` (dec2) unconditionally and
+  `Transformer::load_parameters()` only *warned* on missing/superfluous
+  tensors — so a depth-mismatched run translated into garbage with exit code
+  0, exactly the "ships silently" class NEU-56 exists to kill. `Transformer`
+  now reconciles the model file's `encoder_l<N>_`/`decoder_l<N>_` inventory
+  against `Model::Config.encoder_layers`/`decoder_layers` before any weights
+  load and throws `std::runtime_error` naming both sides (surfaces as the
+  existing exit-1 runtime failure in the CLIs; the app side already sets
+  config from bundle metadata).
+
+### Added (NEU-134)
+
+- `leanmt-bench translate` architecture flags `--encoder_layers`,
+  `--decoder_layers`, `--ffn_depth`, `--num_heads` (defaults equal
+  `Model::Config`'s 6/2/2/8, so invocations without them are byte-identical;
+  flag names mirror `leanmt-probe`). The effective architecture joins the
+  stderr audit line. Additive optional flags only — the translate CLI spec
+  stays `versta.engine-cli/1`. Coverage: synthetic-model depth-mismatch
+  throw tests in `tests/model_test.cc`; golden output with explicit matching
+  flags, exit 1 on mismatch (naming the field) and exit 2 on a zero value in
+  `bench/translate_cli_test.sh`.
+
 ### Added (NEU-50)
 
 - `leanmt-bench translate`: batch file→file translate mode on the existing

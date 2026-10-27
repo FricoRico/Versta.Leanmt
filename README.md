@@ -273,6 +273,12 @@ coordinated event):
   greedy), `--batch N` (lines per `translate()` call — performance knob only,
   output is batch-size invariant). `leanmt-bench --version` prints the
   engine + CLI spec versions for the harness to record.
+- Model architecture flags `--encoder_layers N` / `--decoder_layers N` /
+  `--ffn_depth N` / `--num_heads N` (NEU-134) mirror leanmt-probe's, with
+  defaults equal to `Model::Config`'s (6/2/2/8 — behaviour without them is
+  unchanged). The requested depth is reconciled against the model file at
+  load; a mismatch aborts with exit 1 naming both sides instead of
+  translating into exit-0 garbage.
 
 Two-vocabulary models (split `encoder_Wemb`/`decoder_Wemb`, e.g. ja/zh) also
 need `--target-vocab` — same fail-fast rule as the library (NEU-26). The
@@ -307,7 +313,11 @@ precise message in these cases (no crashes, no undefined behaviour):
   `kBinaryFileVersion` == 1, the bergamot int8 layout);
 - truncated or corrupt model file — every length field read is bounds-checked
   against the mapped size;
-- tensor with an unknown/incompatible element type.
+- tensor with an unknown/incompatible element type;
+- architecture mismatch (NEU-134): the model file's `encoder_l<N>_` /
+  `decoder_l<N>_` layer inventory must equal `Model::Config.encoder_layers`
+  / `decoder_layers` exactly; a mismatch aborts before any weights load and
+  the error names both sides (file depth and requested depth).
 
 A model handle outlives any translation session; sessions must be torn down
 first (the app-side JNI/Kotlin contract also lives in Versta.Android's
