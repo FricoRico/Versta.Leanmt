@@ -5,6 +5,23 @@ slimt/bergamot lineage; upstream syncs list their source commits.
 
 ## [Unreleased]
 
+### Fixed (NEU-157)
+
+- **CI: cmake 4 runner-image drift broke every configure step.** GitHub's
+  ubuntu-latest image rolled from cmake 3.x to 4.x (2026-10-27); cmake 4
+  removed compatibility with `cmake_minimum_required(VERSION < 3.5)` and
+  bundled third_party/sentencepiece still declares 3.1, so all host and
+  android CI legs failed at Configure (the android legs use the runner's
+  cmake, not the NDK-bundled one — verified cmake 4.4.4 in run 40477149391
+  logs). Workaround: `CMAKE_POLICY_VERSION_MINIMUM=3.5` set once in the
+  workflow env block (cmake 4's official escape hatch; ignored by cmake
+  < 4). **Note for future bumps: our builds couple the bundled third_party
+  cmake-minimum floor to whatever cmake the runners ship — a runner-image
+  rollover can break the repo with zero code changes on our side.** The
+  proper fix remains bumping the sentencepiece pin to a release requiring
+  cmake >= 3.5 itself.
+- ci.yml "build-and-test" is the only affected workflow; no source changes.
+
 ### Added (NEU-50)
 
 - `leanmt-bench translate`: batch file→file translate mode on the existing
