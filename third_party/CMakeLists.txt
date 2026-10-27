@@ -30,3 +30,19 @@ if(LEANMT_COMPILER_ACCEPTS_MEVEX512)
     endif()
   endforeach()
 endif()
+
+# The bundled sentencepiece predates the libstdc++ header cleanup (GCC 13+):
+# sentencepiece_processor.h uses uint32_t without including <cstdint>, which
+# older libstdc++ pulled in transitively. ubuntu-latest runners moved past
+# that header set in the 2026-10-27 image rollover (NEU-157), breaking the
+# host leg's compile of sentencepiece_processor.cc; NDK libc++ still carries
+# the transitive include, which is why the android legs stayed green.
+# Force-include <cstdint> for the C++ sources of the one target we build
+# (sentencepiece-static) — narrowly scoped, no submodule change. Drop this
+# with the sentencepiece pin bump that requires cmake >= 3.5 (CHANGELOG).
+check_cxx_compiler_flag("-include cstdint" SP_ACCEPTS_FORCE_INCLUDE_CSTDINT)
+if(SP_ACCEPTS_FORCE_INCLUDE_CSTDINT AND TARGET sentencepiece-static)
+  target_compile_options(sentencepiece-static PRIVATE
+    "$<$<COMPILE_LANGUAGE:CXX>:-include>"
+    "$<$<COMPILE_LANGUAGE:CXX>:cstdint>")
+endif()

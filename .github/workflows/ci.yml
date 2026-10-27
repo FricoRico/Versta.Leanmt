@@ -21,6 +21,19 @@ permissions:
 
 env:
   CMAKE_BUILD_TYPE: Release
+  # Runner-image drift guard (NEU-157): cmake 4.0 removed compatibility with
+  # `cmake_minimum_required(VERSION < 3.5)`, and bundled
+  # third_party/sentencepiece still declares 3.1. When ubuntu-latest rolled
+  # from cmake 3.x to 4.x (2026-10-27), every Configure step below started
+  # failing repo-wide — the android legs too, because they deliberately use
+  # the runner's cmake (see the android-build header comment), not the
+  # NDK-bundled one. CMAKE_POLICY_VERSION_MINIMUM is cmake 4's official
+  # escape hatch for exactly this case; as an environment variable it
+  # initializes the cache entry in every new build tree, so one setting here
+  # covers all current and future configure invocations uniformly. cmake < 4
+  # ignores it, so the self-hosted arm64 image is unaffected. Remove it when
+  # the sentencepiece pin is bumped to a release requiring cmake >= 3.5.
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
 
 # `shell: bash` expands to `bash --noprofile --norc -eo pipefail` — pipefail
 # is the load-bearing part: steps like `cmake --build build | tee build.log`
