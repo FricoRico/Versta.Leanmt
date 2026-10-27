@@ -74,6 +74,14 @@ run_translate "$WORK/input.txt" "$WORK/out_b2.txt" --batch 2 \
 cmp -s "$WORK/out.txt" "$WORK/out_b2.txt" \
   || fail "--batch 2 output differs from default batch"
 
+# 3b. Explicit architecture flags matching the fixture (enc6/dec2, ffn 2,
+#     heads 8) keep the golden output byte-identical (NEU-134).
+run_translate "$WORK/input.txt" "$WORK/out_arch.txt" \
+  --encoder_layers 6 --decoder_layers 2 --ffn_depth 2 --num_heads 8 \
+  || fail "explicit matching arch flags exited nonzero"
+cmp -s "$WORK/expected.txt" "$WORK/out_arch.txt" \
+  || fail "explicit matching arch flags changed the golden output"
+
 # 4. Explicit greedy decode flag is accepted and deterministic.
 run_translate "$WORK/input.txt" "$WORK/out_greedy.txt" --beam 1 \
   || fail "--beam 1 exited nonzero"
@@ -119,6 +127,24 @@ code=$?
 "$BIN" translate --bogus 2>/dev/null
 code=$?
 [ "$code" -eq 2 ] || fail "unknown flag: expected exit 2, got $code"
+
+# Architecture mismatch (NEU-134): the fixture is enc6/dec2. Requesting dec4
+# must fail fast at model load (exit 1) naming the mismatched field — never
+# translate into exit-0 garbage.
+"$BIN" translate --model "$MODEL" --vocab "$VOCAB" --shortlist "$SHORTLIST" \
+  --input "$WORK/input.txt" --output "$WORK/x.txt" --decoder_layers 4 \
+  2>"$WORK/arch.stderr"
+code=$?
+[ "$code" -eq 1 ] || fail "depth-mismatched arch: expected exit 1, got $code"
+grep -q "decoder_layers" "$WORK/arch.stderr" \
+  || fail "depth-mismatch error must name the field: $(cat "$WORK/arch.stderr")"
+
+# Zero is a usage error (exit 2), not a valid layer count.
+"$BIN" translate --model "$MODEL" --vocab "$VOCAB" --shortlist "$SHORTLIST" \
+  --input "$WORK/input.txt" --output "$WORK/x.txt" --decoder_layers 0 \
+  2>/dev/null
+code=$?
+[ "$code" -eq 2 ] || fail "zero architecture value: expected exit 2, got $code"
 
 # 7. --version carries the spec identifier the harness pins against.
 "$BIN" --version 2>/dev/null | grep -q "versta.engine-cli/1" \

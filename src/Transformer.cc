@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -23,6 +24,56 @@
 #include "Vocabulary.hh"
 
 namespace leanmt {
+
+namespace {
+
+// Deepest `<stack>_l<N>_` layer index present in the model file's tensor
+// inventory. Bergamot layer names are contiguous from 1
+// (`encoder_l1_self_Wq`, ...), so the deepest index is the file's layer
+// count for that stack.
+size_t deepest_file_layer(const std::vector<io::Item> &items,
+                          const char *stack) {
+  const std::string prefix = std::string(stack) + "_l";
+  size_t deepest = 0;
+  for (const io::Item &item : items) {
+    if (item.name.compare(0, prefix.size(), prefix) != 0) {
+      continue;
+    }
+    size_t pos = prefix.size();
+    size_t layer = 0;
+    bool have_digits = false;
+    while (pos < item.name.size() && item.name[pos] >= '0' &&
+           item.name[pos] <= '9') {
+      layer = layer * 10 + static_cast<size_t>(item.name[pos] - '0');
+      ++pos;
+      have_digits = true;
+    }
+    if (have_digits && pos < item.name.size() && item.name[pos] == '_') {
+      deepest = std::max(deepest, layer);
+    }
+  }
+  return deepest;
+}
+
+// Fail-fast architecture reconciliation (NEU-134): the file's layer
+// inventory for a stack must equal the requested `Model::Config` depth.
+// Before this check a depth mismatch surfaced only as [warn] noise in
+// load_parameters (missing/superfluous tensors) and the run translated into
+// garbage with exit code 0. Throws naming both sides.
+void reconcile_stack_depth(const std::vector<io::Item> &items,
+                           const char *stack, size_t config_layers) {
+  size_t file_layers = deepest_file_layer(items, stack);
+  if (file_layers != config_layers) {
+    throw std::runtime_error(
+        std::string("model/config architecture mismatch: model file carries ") +
+        std::to_string(file_layers) + " " + stack +
+        "_l layer(s) but Model::Config." + stack + "_layers requests " +
+        std::to_string(config_layers) +
+        " — refusing to run a depth-mismatched stack");
+  }
+}
+
+}  // namespace
 
 void transform_embedding(Tensor &word_embedding, size_t start /* = 0*/) {
   // This is a pain, why does marian-transpose here, I do not get yet.
@@ -132,6 +183,11 @@ Transformer::Transformer(size_t encoder_layers, size_t decoder_layers,
       encoder_(encoder_layers, num_heads, feed_forward_depth),  //
       decoder_(decoder_layers, num_heads, feed_forward_depth,
                decoder_embedding_) {
+  // Reconcile the model file's layer inventory against the requested
+  // architecture before any weights load — a depth-mismatched stack would
+  // otherwise translate into garbage and exit 0 (NEU-134, NEU-56).
+  reconcile_stack_depth(items_, "encoder", encoder_layers);
+  reconcile_stack_depth(items_, "decoder", decoder_layers);
   load_parameters();
   prepare_biases();
 }
