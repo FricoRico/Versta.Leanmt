@@ -1,0 +1,170 @@
+job: ci-failures-host-x86_64 run 40481486770
+[  1%] Building C object third_party/ruy/third_party/cpuinfo/deps/clog/CMakeFiles/clog.dir/src/clog.c.o
+[  3%] Building CXX object third_party/ruy/ruy/profiler/CMakeFiles/ruy_profiler_instrumentation.dir/instrumentation.cc.o
+[  4%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_wait.dir/wait.cc.o
+[  4%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/arena.cc.o
+[  4%] Linking CXX static library libruy_profiler_instrumentation.a
+[  4%] Built target ruy_profiler_instrumentation
+[  6%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/arenastring.cc.o
+[  6%] Linking CXX static library libruy_wait.a
+[  6%] Linking C static library libclog.a
+[  6%] Built target ruy_wait
+[  8%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_system_aligned_alloc.dir/system_aligned_alloc.cc.o
+[  8%] Built target clog
+[  8%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/bytestream.cc.o
+[  8%] Linking CXX static library libruy_system_aligned_alloc.a
+[  8%] Built target ruy_system_aligned_alloc
+[  8%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/coded_stream.cc.o
+[  8%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_block_map.dir/block_map.cc.o
+[  9%] Linking CXX static library libruy_block_map.a
+[  9%] Built target ruy_block_map
+[ 11%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/common.cc.o
+[ 11%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_blocking_counter.dir/blocking_counter.cc.o
+[ 13%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_denormal.dir/denormal.cc.o
+[ 13%] Linking CXX static library libruy_denormal.a
+[ 13%] Linking CXX static library libruy_blocking_counter.a
+[ 13%] Built target ruy_denormal
+[ 13%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_apply_multiplier.dir/apply_multiplier.cc.o
+[ 13%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/extension_set.cc.o
+[ 13%] Built target ruy_blocking_counter
+[ 14%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/generated_enum_util.cc.o
+[ 16%] Linking CXX static library libruy_apply_multiplier.a
+[ 16%] Built target ruy_apply_multiplier
+[ 16%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_have_built_path_for_avx512.dir/have_built_path_for_avx512.cc.o
+clang++: warning: argument 'evex512' is deprecated, no alternative argument provided because AVX10/256 is not supported and will be removed [-Wdeprecated]
+[ 16%] Linking CXX static library libruy_have_built_path_for_avx512.a
+[ 16%] Built target ruy_have_built_path_for_avx512
+[ 16%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_have_built_path_for_avx2_fma.dir/have_built_path_for_avx2_fma.cc.o
+[ 18%] Linking CXX static library libruy_have_built_path_for_avx2_fma.a
+[ 18%] Built target ruy_have_built_path_for_avx2_fma
+[ 18%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/generated_message_table_driven_lite.cc.o
+[ 18%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_have_built_path_for_avx.dir/have_built_path_for_avx.cc.o
+[ 19%] Linking CXX static library libruy_have_built_path_for_avx.a
+[ 19%] Built target ruy_have_built_path_for_avx
+[ 19%] Building C object third_party/ruy/third_party/cpuinfo/CMakeFiles/cpuinfo.dir/src/init.c.o
+[ 19%] Building C object third_party/ruy/third_party/cpuinfo/CMakeFiles/cpuinfo.dir/src/api.c.o
+[ 21%] Building C object third_party/ruy/third_party/cpuinfo/CMakeFiles/cpuinfo.dir/src/cache.c.o
+[ 21%] Building C object third_party/ruy/third_party/cpuinfo/CMakeFiles/cpuinfo.dir/src/x86/init.c.o
+[ 22%] Building C object third_party/ruy/third_party/cpuinfo/CMakeFiles/cpuinfo.dir/src/x86/info.c.o
+[ 22%] Building C object third_party/ruy/third_party/cpuinfo/CMakeFiles/cpuinfo.dir/src/x86/vendor.c.o
+[ 22%] Building C object third_party/ruy/third_party/cpuinfo/CMakeFiles/cpuinfo.dir/src/x86/uarch.c.o
+[ 22%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_prepacked_cache.dir/prepacked_cache.cc.o
+[ 24%] Building C object third_party/ruy/third_party/cpuinfo/CMakeFiles/cpuinfo.dir/src/x86/name.c.o
+[ 24%] Building C object third_party/ruy/third_party/cpuinfo/CMakeFiles/cpuinfo.dir/src/x86/topology.c.o
+[ 24%] Building C object third_party/ruy/third_party/cpuinfo/CMakeFiles/cpuinfo.dir/src/x86/isa.c.o
+[ 26%] Building C object third_party/ruy/third_party/cpuinfo/CMakeFiles/cpuinfo.dir/src/x86/cache/init.c.o
+[ 27%] Linking CXX static library libruy_prepacked_cache.a
+[ 27%] Building C object third_party/ruy/third_party/cpuinfo/CMakeFiles/cpuinfo.dir/src/x86/cache/descriptor.c.o
+[ 29%] Building C object third_party/ruy/third_party/cpuinfo/CMakeFiles/cpuinfo.dir/src/x86/cache/deterministic.c.o
+[ 29%] Built target ruy_prepacked_cache
+[ 31%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_allocator.dir/allocator.cc.o
+[ 31%] Building C object third_party/ruy/third_party/cpuinfo/CMakeFiles/cpuinfo.dir/src/x86/linux/init.c.o
+[ 31%] Building C object third_party/ruy/third_party/cpuinfo/CMakeFiles/cpuinfo.dir/src/x86/linux/cpuinfo.c.o
+[ 32%] Building C object third_party/ruy/third_party/cpuinfo/CMakeFiles/cpuinfo.dir/src/linux/smallfile.c.o
+[ 32%] Linking CXX static library libruy_allocator.a
+[ 32%] Building C object third_party/ruy/third_party/cpuinfo/CMakeFiles/cpuinfo.dir/src/linux/multiline.c.o
+[ 32%] Built target ruy_allocator
+[ 32%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_thread_pool.dir/thread_pool.cc.o
+[ 34%] Building C object third_party/ruy/third_party/cpuinfo/CMakeFiles/cpuinfo.dir/src/linux/cpulist.c.o
+[ 34%] Building C object third_party/ruy/third_party/cpuinfo/CMakeFiles/cpuinfo.dir/src/linux/processors.c.o
+[ 34%] Linking C static library libcpuinfo.a
+[ 34%] Built target cpuinfo
+[ 34%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_cpuinfo.dir/cpuinfo.cc.o
+[ 36%] Linking CXX static library libruy_cpuinfo.a
+[ 37%] Linking CXX static library libruy_thread_pool.a
+[ 37%] Built target ruy_cpuinfo
+[ 37%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_tune.dir/tune.cc.o
+[ 37%] Built target ruy_thread_pool
+[ 37%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/generated_message_util.cc.o
+[ 39%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/implicit_weak_message.cc.o
+[ 39%] Linking CXX static library libruy_tune.a
+[ 39%] Built target ruy_tune
+[ 40%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_kernel_arm.dir/kernel_arm32.cc.o
+[ 40%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_kernel_arm.dir/kernel_arm64.cc.o
+[ 40%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_pack_arm.dir/pack_arm.cc.o
+[ 40%] Linking CXX static library libruy_kernel_arm.a
+[ 42%] Linking CXX static library libruy_pack_arm.a
+[ 42%] Built target ruy_kernel_arm
+[ 42%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/int128.cc.o
+[ 42%] Built target ruy_pack_arm
+[ 42%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_kernel_avx512.dir/kernel_avx512.cc.o
+clang++: warning: argument 'evex512' is deprecated, no alternative argument provided because AVX10/256 is not supported and will be removed [-Wdeprecated]
+[ 42%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_pack_avx512.dir/pack_avx512.cc.o
+clang++: warning: argument 'evex512' is deprecated, no alternative argument provided because AVX10/256 is not supported and will be removed [-Wdeprecated]
+[ 44%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_kernel_avx2_fma.dir/kernel_avx2_fma.cc.o
+[ 45%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/io_win32.cc.o
+[ 45%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/message_lite.cc.o
+[ 47%] Linking CXX static library libruy_pack_avx512.a
+[ 49%] Linking CXX static library libruy_kernel_avx512.a
+[ 49%] Built target ruy_pack_avx512
+[ 49%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/parse_context.cc.o
+[ 49%] Built target ruy_kernel_avx512
+[ 50%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_pack_avx2_fma.dir/pack_avx2_fma.cc.o
+[ 50%] Linking CXX static library libruy_kernel_avx2_fma.a
+[ 50%] Built target ruy_kernel_avx2_fma
+[ 52%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_kernel_avx.dir/kernel_avx.cc.o
+[ 52%] Linking CXX static library libruy_pack_avx2_fma.a
+[ 52%] Built target ruy_pack_avx2_fma
+[ 52%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_pack_avx.dir/pack_avx.cc.o
+[ 52%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_ctx.dir/ctx.cc.o
+[ 54%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/repeated_field.cc.o
+[ 54%] Linking CXX static library libruy_kernel_avx.a
+[ 54%] Built target ruy_kernel_avx
+[ 54%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/status.cc.o
+[ 54%] Linking CXX static library libruy_ctx.a
+[ 54%] Built target ruy_ctx
+[ 55%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_context.dir/context.cc.o
+[ 55%] Linking CXX static library libruy_pack_avx.a
+[ 55%] Built target ruy_pack_avx
+[ 55%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_trmul.dir/trmul.cc.o
+[ 55%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_prepare_packed_matrices.dir/prepare_packed_matrices.cc.o
+[ 55%] Linking CXX static library libruy_context.a
+[ 55%] Built target ruy_context
+[ 57%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_context_get_ctx.dir/context_get_ctx.cc.o
+[ 59%] Linking CXX static library libruy_trmul.a
+[ 59%] Linking CXX static library libruy_prepare_packed_matrices.a
+[ 59%] Built target ruy_trmul
+[ 59%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/statusor.cc.o
+[ 59%] Built target ruy_prepare_packed_matrices
+[ 60%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/stringpiece.cc.o
+[ 60%] Linking CXX static library libruy_context_get_ctx.a
+[ 60%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/stringprintf.cc.o
+[ 60%] Built target ruy_context_get_ctx
+[ 62%] Building CXX object third_party/ruy/ruy/CMakeFiles/ruy_frontend.dir/frontend.cc.o
+[ 63%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/strutil.cc.o
+[ 63%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/structurally_valid.cc.o
+[ 63%] Linking CXX static library libruy_frontend.a
+[ 63%] Built target ruy_frontend
+[ 63%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/time.cc.o
+[ 65%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/wire_format_lite.cc.o
+[ 65%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/zero_copy_stream.cc.o
+[ 67%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/zero_copy_stream_impl.cc.o
+[ 67%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/__/third_party/protobuf-lite/zero_copy_stream_impl_lite.cc.o
+[ 67%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/builtin_pb/sentencepiece.pb.cc.o
+[ 68%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/builtin_pb/sentencepiece_model.pb.cc.o
+[ 68%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/bpe_model.cc.o
+[ 68%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/char_model.cc.o
+[ 70%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/error.cc.o
+[ 70%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/filesystem.cc.o
+[ 72%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/model_factory.cc.o
+[ 72%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/model_interface.cc.o
+[ 72%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/normalizer.cc.o
+[ 73%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/sentencepiece_processor.cc.o
+In file included from /home/runner/work/Versta.Leanmt/Versta.Leanmt/third_party/sentencepiece/src/sentencepiece_processor.cc:15:
+/home/runner/work/Versta.Leanmt/Versta.Leanmt/third_party/sentencepiece/src/sentencepiece_processor.h:167:3: error: unknown type name 'uint32_t'
+  167 |   uint32_t id() const;
+      |   ^
+/home/runner/work/Versta.Leanmt/Versta.Leanmt/third_party/sentencepiece/src/sentencepiece_processor.h:168:3: error: unknown type name 'uint32_t'
+  168 |   uint32_t begin() const;
+      |   ^
+/home/runner/work/Versta.Leanmt/Versta.Leanmt/third_party/sentencepiece/src/sentencepiece_processor.h:169:3: error: unknown type name 'uint32_t'
+  169 |   uint32_t end() const;
+      |   ^
+[ 73%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/unigram_model.cc.o
+[ 75%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/util.cc.o
+[ 75%] Building CXX object third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/word_model.cc.o
+3 errors generated.
+gmake[2]: *** [third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/build.make:569: third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/sentencepiece_processor.cc.o] Error 1
+gmake[2]: *** Waiting for unfinished jobs....
+gmake[1]: *** [CMakeFiles/Makefile2:561: third_party/sentencepiece/src/CMakeFiles/sentencepiece-static.dir/all] Error 2
+gmake: *** [Makefile:166: all] Error 2
