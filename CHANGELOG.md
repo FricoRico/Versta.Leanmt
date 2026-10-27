@@ -20,7 +20,15 @@ slimt/bergamot lineage; upstream syncs list their source commits.
   rollover can break the repo with zero code changes on our side.** The
   proper fix remains bumping the sentencepiece pin to a release requiring
   cmake >= 3.5 itself.
-- ci.yml "build-and-test" is the only affected workflow; no source changes.
+- **Host build: missing `<cstdint>` in bundled sentencepiece surfaced by the
+  same rollover.** sentencepiece_processor.h uses `uint32_t` relying on a
+  transitive include that GCC 13-era libstdc++ (new runner headers, clang
+  host leg) no longer provides; NDK libc++ still provides it, so android
+  legs were unaffected. Fixed by force-including `<cstdint>` into the C++
+  sources of `sentencepiece-static` in third_party/CMakeLists.txt, next to
+  the existing ruy `-mevex512` toolchain shim. No submodule or source
+  changes; drop with the sentencepiece pin bump above.
+- ci.yml "build-and-test" is the only affected workflow.
 
 ### Added (NEU-50)
 
