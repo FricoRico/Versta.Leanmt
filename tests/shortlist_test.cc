@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -16,6 +17,7 @@
 #include <vector>
 
 #include "leanmt_test.hh"
+#include "synthetic_vocabs.hh"
 #include "src/Shortlist.hh"
 #include "src/Vocabulary.hh"
 
@@ -200,6 +202,93 @@ TEST("digit runs decode back to their text") {
     g.vocab.decode(run_words, decoded, false);
     CHECK_EQ(decoded, run);
   }
+}
+
+TEST("non-Latin source digits trigger forcing (fa→en and en→fa)") {
+  // Source-side triggering regression on non-Latin scripts (PR #8 review /
+  // NEU-135): on an fa→en pack the SOURCE carries ۰-۹, so a
+  // source_has_digit check that only sees ASCII never fires — exactly the
+  // inputs with the worst harm. Two synthetic vocabularies stand in for the
+  // pair (tests/synthetic_vocabs.hh — the pinned ende vocab has no
+  // Eastern-Arabic digit pieces), wired two-vocab like production; the
+  // lexical table is empty, so every admitted digit piece comes from
+  // forcing alone.
+  const auto& vocabs = leanmt::test::synthetic_vocabs();
+  REQUIRE(vocabs.ok);
+  leanmt::Vocabulary fa(vocabs.fa_path);
+  leanmt::Vocabulary en(vocabs.en_path);
+
+  // Empty lexical table: every source word maps to nothing; with
+  // min_candidates=0 nothing is force-filled either, so a no-digit source
+  // produces an empty shortlist — the cleanest possible gate witness.
+  // Sized for either direction (en_fa reads the table with en ids).
+  const uint64_t word_rows = std::max(fa.size(), en.size()) + 1;
+  std::vector<uint64_t> offsets(word_rows, 0);  // all rows empty
+  struct {
+    uint64_t magic, checksum, frequent, best, word_to_offset_size,
+        shortlist_size;
+  } header{leanmt::ShortlistGenerator::kMagic, 0, 0, 0, word_rows, 0};
+  std::vector<char> blob(sizeof(header) + offsets.size() * sizeof(uint64_t));
+  std::memcpy(blob.data(), &header, sizeof(header));
+  std::memcpy(blob.data() + sizeof(header), offsets.data(),
+              offsets.size() * sizeof(uint64_t));
+  leanmt::View view{blob.data(), blob.size()};
+
+  // fa→en: Persian-digit source must force-admit the full ASCII digit
+  // target set, so an English output can render ۴۵۰۰ as 4500.
+  leanmt::ShortlistGenerator fa_en(view, fa, en);
+  auto [fa_digits, fa_views] = fa.encode("قیمت ۴۵۰۰ ریال است", false);
+  bool any_digit_source = false;
+  for (leanmt::Word word : fa_digits) {
+    any_digit_source = any_digit_source || fa.is_digit_piece(word);
+  }
+  REQUIRE(any_digit_source);  // the trigger input itself must exist
+
+  leanmt::Shortlist forced = fa_en.generate(fa_digits, 0);
+  const leanmt::Words& forced_words = words_of(forced);
+  size_t admitted = 0;
+  for (size_t i = 0; i < en.size(); i++) {
+    leanmt::Word id = static_cast<leanmt::Word>(i);
+    if (en.is_digit_piece(id)) {
+      ++admitted;
+      CHECK(contains(forced_words, id));  // tiny vocab ≪ cap: all admitted
+    }
+  }
+  CHECK(admitted >= 10);  // at least every single ASCII digit "0".."9"
+
+  // Control: a digit-free fa source admits nothing at all.
+  auto [fa_plain, fa_plain_views] = fa.encode("قیمت ریال است", false);
+  leanmt::Shortlist baseline = fa_en.generate(fa_plain, 0);
+  CHECK(words_of(baseline).empty());
+
+  // en→fa: ASCII-digit source must force-admit the Persian digit target
+  // pieces, so a Persian output can legitimately keep ۴۵۰۰ in script.
+  leanmt::ShortlistGenerator en_fa(view, en, fa);
+  auto [en_digits, en_views] = en.encode("the fare is 4500 rials", false);
+  leanmt::Shortlist fa_forced = en_fa.generate(en_digits, 0);
+  const leanmt::Words& fa_words = words_of(fa_forced);
+  size_t eastern_admitted = 0;
+  for (size_t i = 0; i < fa.size(); i++) {
+    leanmt::Word id = static_cast<leanmt::Word>(i);
+    if (!fa.is_digit_piece(id)) continue;
+    std::string text;
+    fa.decode({id}, text, false);
+    std::string_view rest = text;
+    uint32_t cp = 0;
+    bool eastern = false;
+    while (leanmt::next_utf8_codepoint(rest, cp)) {
+      if ((cp >= 0x0660 && cp <= 0x0669) || (cp >= 0x06F0 && cp <= 0x06F9)) {
+        eastern = true;
+      }
+    }
+    if (eastern) {
+      CHECK(contains(fa_words, id));
+      ++eastern_admitted;
+    }
+  }
+  CHECK(eastern_admitted > 0);  // synthetic fa vocab carries both blocks
+  CHECK_EQ(fa_words.size() % leanmt::ShortlistGenerator::kVExtAlignment, 0u);
+  CHECK_EQ(forced_words.size() % leanmt::ShortlistGenerator::kVExtAlignment, 0u);
 }
 
 int main() { return leanmt::test::run_all(); }

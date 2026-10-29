@@ -1,13 +1,21 @@
 // Numeric-fidelity gate (NEU-30): translates the pinned numeric travel
 // corpus (tests/fixtures/numeric/travel_ende_100.txt, 100 sentences with
 // prices, times, dates, addresses, quantities) and scores how faithfully
-// the digit sequences survive translation.
+// the numbers survive translation.
 //
-// Metric: a sentence counts as an exact match when the *multiset of digit
-// runs* in the output equals the source's (order-free, so German word order
-// and decimal-comma reformatting pass; dropped, fused ("404404") or
-// duplicated numbers fail). Both per-token run recall and per-row exact
-// match are reported; the gate is `--require-rate` on row exact match.
+// Metric (tests/digit_metrics.hh): value-level and script-normalized,
+// mirroring the pack-acceptance probe (Versta.Models
+// versta.probe.metrics.digit_preservation). Arabic-Indic (U+0660–0669) and
+// Persian/Extended Arabic-Indic (U+06F0–06F9) digits are transliterated to
+// ASCII first (۱۲ ≡ 12; ۴۵۰۰ vs 5400 fails), clocks compare as
+// 12h-normalized (hour, minute) values across colon/Japanese/Korean/
+// meridiem surfaces (18:45 ≡ 18時45分 ≡ 6:45 pm), and the remaining digit
+// runs compare as multisets (order-free, so German word order and
+// decimal-comma reformatting pass; dropped, fused ("404404") or duplicated
+// numbers fail). A sentence counts as an exact match when every source
+// number carrier is preserved and nothing extra appears. Both per-carrier
+// recall and per-row exact match are reported; the gate is `--require-rate`
+// on row exact match.
 //
 // Model, corpus and decode are pinned and deterministic, so the rate is
 // stable in CI and per-PR runs. The translation cache is disabled: this
@@ -21,12 +29,12 @@
 
 #include <fstream>
 #include <iostream>
-#include <map>
 #include <string>
 #include <sys/stat.h>
 #include <vector>
 
 #include "leanmt_test.hh"
+#include "tests/digit_metrics.hh"
 #include "src/Frontend.hh"
 #include "src/Model.hh"
 
@@ -46,51 +54,20 @@ bool corpus_available(const std::string& path) {
   return ::stat(path.c_str(), &st) == 0;
 }
 
-// Maximal runs of ASCII digits, with multiplicity: "12.50 euros" →
-// {"12": 1, "50": 1}. Copy fidelity is checked on runs, so decimal-separator
-// and grouping rewrites (12.50 → 12,50; 7:30 → 7.30 Uhr) do not register as
-// digit loss, while any dropped, altered, fused or duplicated run does.
-using DigitRuns = std::map<std::string, size_t>;
-
-DigitRuns digit_runs(const std::string& text) {
-  DigitRuns runs;
-  size_t i = 0;
-  while (i < text.size()) {
-    if (text[i] >= '0' && text[i] <= '9') {
-      size_t begin = i;
-      while (i < text.size() && text[i] >= '0' && text[i] <= '9') ++i;
-      ++runs[text.substr(begin, i - begin)];
-    } else {
-      ++i;
-    }
-  }
-  return runs;
-}
-
 struct RowResult {
   std::string source;
   std::string target;
-  size_t runs_total = 0;     // source runs (with multiplicity)
-  size_t runs_matched = 0;   // source runs present in output
-  size_t runs_extra = 0;     // output runs not in source (doubling detection)
-  bool exact = false;        // multiset equality of digit runs
+  size_t runs_total = 0;     // expected number carriers (digit runs + clocks)
+  size_t runs_matched = 0;   // source carriers present in output
+  size_t runs_extra = 0;     // output carriers not in source (doubling detection)
+  bool exact = false;        // value-level multiset equality of all carriers
 };
 
 RowResult score_row(const std::string& source, const std::string& target) {
-  DigitRuns want = digit_runs(source);
-  DigitRuns got = digit_runs(target);
-  RowResult row{source, target, 0, 0, 0, false};
-  for (const auto& [run, count] : want) {
-    row.runs_total += count;
-    size_t present = got.count(run) ? got[run] : 0;
-    row.runs_matched += std::min(count, present);
-    if (present > count) row.runs_extra += present - count;
-  }
-  for (const auto& [run, count] : got) {
-    if (!want.count(run)) row.runs_extra += count;
-  }
-  row.exact = (row.runs_matched == row.runs_total) && (row.runs_extra == 0);
-  return row;
+  leanmt::numeric::DigitReport report =
+      leanmt::numeric::compare_digit_values(source, target);
+  return RowResult{source,    target,        report.expected,
+                   report.matched, report.extra, report.exact};
 }
 
 }  // namespace
@@ -176,7 +153,7 @@ int main(int argc, char** argv) {
               corpus_path.c_str());
   std::printf("row exact-match: %zu/%zu = %.1f%%\n", exact, rows.size(),
               100.0 * row_rate);
-  std::printf("digit-run recall: %zu/%zu = %.1f%% (+ %zu extra runs in "
+  std::printf("number-carrier recall: %zu/%zu = %.1f%% (+ %zu extra runs in "
               "output)\n",
               runs_matched, runs_total, 100.0 * run_rate, runs_extra);
   std::printf("numeric_exact_match=%.3f (rows %zu/%zu, runs %zu/%zu)\n",

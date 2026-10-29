@@ -3,9 +3,11 @@
 // word-boundary helpers classify SentencePiece pieces correctly.
 
 #include <string>
+#include <string_view>
 #include <sys/stat.h>
 
 #include "leanmt_test.hh"
+#include "synthetic_vocabs.hh"
 #include "src/Vocabulary.hh"
 
 namespace {
@@ -114,6 +116,101 @@ TEST("is_digit_piece classifies digit-only pieces (with and without ▁)") {
   CHECK(!vocab.is_digit_piece(vocab.size() + 7));
   CHECK(!vocab.is_digit_piece(vocab.eos_id()));
   CHECK(!vocab.is_digit_piece(vocab.pad_id()));
+}
+
+TEST("is_digit_text covers the shipped number scripts (table-driven)") {
+  // Hermetic classification coverage — synthetic multi-byte pieces need no
+  // fixture model. Covered: ASCII, Arabic-Indic (U+0660–0669), Extended
+  // Arabic-Indic / Persian (U+06F0–06F9) — the scripts the shipped roster's
+  // non-Latin sources (ar, fa) write prices, times and addresses in, and
+  // the ones the pack-acceptance probe transliterates to ASCII (NEU-135).
+  for (const char* digits :
+       {"0", "9", "404", "12000", "۰", "۹۹", "۱۲", "۴۵۰۰", "۲۳", "٤٥٠٠",
+        "١٢", "۱۲3" /* cross-block mix is still digit-only */}) {
+    CHECK(leanmt::is_digit_text(digits));
+  }
+  // Excluded: mixed digit/non-digit pieces, punctuation forms adjacent to
+  // the covered blocks, uncovered scripts (recorded pair-roster decisions),
+  // and malformed UTF-8.
+  for (const char* non_digits :
+       {"", "1st", "B52", "١٢ريال", "۱۲.۵", "٪" /* U+066A percent */,
+        "½" /* U+00BD vulgar fraction */, "１２３" /* fullwidth: not covered */,
+        "二" /* CJK numeral: Lo, not Nd */, "१२" /* Devanagari: no shipped
+        pair */, "\xC0\xB0" /* overlong '0' */, "\xD9" /* truncated */,
+        "\xD9." /* bad trail */, " ", "▁"}) {
+    CHECK(!leanmt::is_digit_text(non_digits));
+  }
+}
+
+TEST("synthetic fa vocab classifies Eastern digit pieces (incl. ▁ stripping)") {
+  // Vocabulary-level check on real SentencePiece objects: the synthetic
+  // fa-style fixture vocab carries digit-only pieces in both covered
+  // non-Latin Nd blocks (see tests/synthetic_vocabs.hh for why the pinned
+  // ende-tiny11 vocab cannot serve here).
+  const auto& vocabs = leanmt::test::synthetic_vocabs();
+  REQUIRE(vocabs.ok);
+  leanmt::Vocabulary fa(vocabs.fa_path);
+
+  bool saw_arabic_indic = false, saw_extended = false, saw_marked = false;
+  for (size_t i = 0; i < fa.size(); i++) {
+    leanmt::Word id = static_cast<leanmt::Word>(i);
+    // Decoded text tells us the script(s) in the piece; is_digit_piece must
+    // agree with an independent re-derivation from the piece text.
+    std::string text;
+    fa.decode({id}, text, false);
+    std::string_view rest = text;
+    uint32_t cp = 0;
+    bool has_digit = false, has_nondigit = false;
+    bool in_066x = false, in_06Fx = false;
+    while (leanmt::next_utf8_codepoint(rest, cp)) {
+      if (cp >= 0x0660 && cp <= 0x0669) {
+        has_digit = true;
+        in_066x = true;
+      } else if (cp >= 0x06F0 && cp <= 0x06F9) {
+        has_digit = true;
+        in_06Fx = true;
+      } else if (cp >= 0x30 && cp <= 0x39) {
+        has_digit = true;
+      } else if (cp != 0x20) {
+        has_nondigit = true;
+      }
+    }
+    if (!has_digit) continue;
+    if (has_nondigit) {
+      // Mixed pieces (digit + non-digit, e.g. byte-fallback "<0xD9>") must
+      // never classify as digit pieces.
+      CHECK(!fa.is_digit_piece(id));
+      continue;
+    }
+    CHECK(fa.is_digit_piece(id));
+    saw_arabic_indic |= in_066x;
+    saw_extended |= in_06Fx;
+    // A digit-only piece that is also a word start carries the metaspace
+    // marker — classifying it as digits exercises the marker-stripping path
+    // on multi-byte digits.
+    saw_marked |= fa.is_word_start(id);
+  }
+  CHECK(saw_arabic_indic);
+  CHECK(saw_extended);
+  CHECK(saw_marked);
+
+  // Sanity on the same object: plain words and specials are not digits.
+  auto [words, views] = fa.encode("قیمت ریال است", false);
+  REQUIRE(!words.empty());
+  for (leanmt::Word word : words) {
+    CHECK(!fa.is_digit_piece(word));
+  }
+  CHECK(!fa.is_digit_piece(fa.eos_id()));
+  CHECK(!fa.is_digit_piece(fa.size() + 7));
+
+  // And the encode path exposes digit pieces for fa input — the
+  // source-side trigger input of the shortlist test exists.
+  auto [digits, dviews] = fa.encode("قیمت ۴۵۰۰ ریال است", false);
+  bool any_digit = false;
+  for (leanmt::Word word : digits) {
+    any_digit = any_digit || fa.is_digit_piece(word);
+  }
+  CHECK(any_digit);
 }
 
 int main() { return leanmt::test::run_all(); }

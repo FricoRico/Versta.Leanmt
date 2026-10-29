@@ -28,6 +28,14 @@ leanmt_add_test(text_processor_test text_processor_test.cc)
 leanmt_add_test(model_test model_test.cc)
 leanmt_add_test(frontend_test frontend_test.cc)
 leanmt_add_test(shortlist_test shortlist_test.cc)
+leanmt_add_test(digit_metrics_test digit_metrics_test.cc)
+
+# The non-Latin digit-forcing regression tests train two tiny synthetic
+# vocabularies at test time (tests/synthetic_vocabs.hh, ~120 pieces each,
+# sub-second, hermetic) because the pinned ende fixture vocab carries no
+# Eastern-Arabic digit pieces (NEU-135 / PR #8 review).
+target_link_libraries(vocabulary_test PRIVATE sentencepiece_train)
+target_link_libraries(shortlist_test PRIVATE sentencepiece_train)
 
 # Numeric-fidelity gate (NEU-30): a ctest-registered CLI rather than a
 # leanmt_test.hh case — it needs its own exit-code contract (failure =

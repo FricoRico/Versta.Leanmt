@@ -22,18 +22,45 @@ slimt/bergamot lineage; upstream syncs list their source commits.
   capped at `kDigitAdmissionCap = 512` (frequency order; all 1- and 2-digit
   chunks are always inside the cap, so every number stays copyable
   chunk-wise — rare long-number specials are what the cap trims; the table
-  may still supply them). Worst case shortlist on digit rows is
+  may still supply them). Digit-script coverage was extended beyond ASCII
+  per the PR #8 review (NEU-135): `is_digit_piece` now scans the piece per
+  UTF-8 codepoint and accepts ASCII (U+0030–0039), Arabic-Indic
+  (U+0660–0669) and Extended Arabic-Indic / Persian (U+06F0–06F9) — exactly
+  the scripts the pack-acceptance probe (Versta.Models
+  `versta.probe.metrics.digit_preservation`) transliterates to ASCII before
+  comparing number values. Source-side triggering is script-agnostic, so a
+  fa→en source carrying ۴۵۰۰ now force-admits digit pieces the same way an
+  ASCII source does.
+  Worst case shortlist on digit rows is
   align8(1000 + 512) = 1512 vs. 1000 before; no-digit inputs are untouched
   (byte-identical shortlists by construction — pinned goldens cover this).
+
+  Digit-script coverage matrix (pair-roster audit: en↔
+  {ar,bg,ca,cs,da,de,el,es,et,fa,fi,fr,he,hr,hu,id,it,ja,ko,lv,nl,pl,pt,
+  ro,ru,sk,sl,sv,tr,uk,vi,zh} — ar and fa are the only directions whose
+  everyday orthography uses non-ASCII Nd digits):
+
+  | script / surface | example | engine forcing (`is_digit_piece`) | engine gate (`numeric_fidelity_test`) | pack probe (Versta.Models) |
+  |---|---|---|---|---|
+  | ASCII | 12, 4500, 18:45 | ✓ | value compare | ✓ |
+  | Arabic-Indic U+0660–0669 (ar) | ٤٥٠٠ | ✓ | transliterated, value compare | ✓ transliterated |
+  | Extended AI / Persian U+06F0–06F9 (fa) | ۴۵۰۰ | ✓ | transliterated, value compare | ✓ transliterated |
+  | clocks (colon / meridiem / 時分 / 시분) | 18:45 ≡ 18時45分 ≡ 6:45 pm | n/a (multi-piece) | ✓ (hour % 12, minute) value tuples | ✓ same tuples |
+  | number words (en/ca/es/fr) | twelve, doce, douze | n/a | ✗ deliberate: gate requires digit surfaces (stricter; word-spelling is a per-language pack-level decision owned by the probe's maps) | ✓ en/ca/es/fr maps |
+  | fullwidth U+FF10–FF19 (ja/zh) | １２３ | ✗ recorded decision | ✗ | ✗ probe also does not transliterate — extend engine+probe together if a shipped corpus ever shows fullwidth digit use |
+  | CJK numeral letters (一二三) | — | outside Nd scope | ✗ | ✗ |
   **Output-affecting by construction; measured zero byte-drift on the
   pinned ende-tiny11 fixture** (3-sentence golden suite + 100-sentence
   numeric corpus dump + 12k-sentence adversarial code sweep — all identical
   before/after; the defect is latent on this fixture, so the change is a
   structural guarantee + permanent CI gate rather than a behavior fix
-  there). Validation: new shortlist unit tests (chunk-coverage guarantee,
-  admission-count bound, alignment invariant, worst-case size bound, digit
-  decode round-trip), vocabulary classification tests, numeric-fidelity
-  ctest gate at 95% (measures 100.0% pre/post), goldens byte-identical.
+   there). Validation: new shortlist unit tests (chunk-coverage guarantee,
+   admission-count bound, alignment invariant, worst-case size bound, digit
+   decode round-trip, non-Latin source-triggering regression), vocabulary
+   classification tests (per-script tables incl. hermetic malformed-UTF-8
+   edges), digit-metric unit tests mirroring the pack probe's vectors,
+   numeric-fidelity ctest gate at 95% (measures 100.0% pre/post), goldens
+   byte-identical.
   Perf, reference arm64 (ubuntu-24.04-arm, CI git notes): digit rows
   +1.6..+3.5% median at 8/24/60 words; the synthetic 120-word
   digit-saturated row shows a non-linear +148% that is *insensitive to the
@@ -48,8 +75,12 @@ slimt/bergamot lineage; upstream syncs list their source commits.
 - Numeric-fidelity gate (`tests/numeric_fidelity_test`, ctest): translates
   the pinned 100-sentence numeric travel corpus
   (`tests/fixtures/numeric/travel_ende_100.txt` — prices, times, dates,
-  addresses, quantities, codes) and scores digit-run multiset equality per
-  row; fails below 95% row exact-match. `--require-rate`/`--corpus`/`--dump`
+  addresses, quantities, codes) and scores value-level, script-normalized
+  digit preservation per row (tests/digit_metrics.hh — Arabic-Indic and
+  Persian digits transliterated to ASCII, clocks compared as
+  12h-normalized values across colon/ja/ko/meridiem surfaces; deliberate
+  divergences from the pack probe in the matrix above); fails below 95% row
+  exact-match. `--require-rate`/`--corpus`/`--dump`
   flags make the same binary the golden-diff tool for output-affecting PRs.
 - `bench/leanmt-bench --digits`: numeric-corpus rows at the canonical
   lengths (every sixth word is a number from a fixed pool); the arm64 CI job
