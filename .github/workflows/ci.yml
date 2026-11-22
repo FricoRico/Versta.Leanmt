@@ -122,6 +122,81 @@ jobs:
             || echo "::warning:: notes push failed (diagnostics only)"
 
   # ---------------------------------------------------------------------------
+  # Contract-pinned Android probe (NEU-473). The weekly pack-acceptance
+  # device sweep (NEU-467) needs an arm64-v8a `leanmt-probe` built from the
+  # *pinned* leanmt ref on NDK r27d, which the lab sandbox image does not
+  # carry. This job produces that binary on demand and archives it as an
+  # artifact instead of bumping the probe pin or substituting NDK r28b.
+  #
+  # Dispatch-only by design: the job checks out a fixed `ref:` rather than
+  # the triggering branch, so it is not a check on the branch that defines
+  # it. Trigger with `gh workflow run ci.yml --ref <branch>` or the Actions
+  # tab, then download the `leanmt-probe-07015949-arm64-r27d` artifact.
+  # ---------------------------------------------------------------------------
+  build-pinned-arm64-probe:
+    name: build pinned leanmt-probe (arm64-v8a / NDK r27d)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PINNED_LEANMT_SHA: 07015949c7e201932a24cc6e53affbc4e35127aa
+      # Same sha1 the android-build matrix already verifies for r27d.
+      PINNED_NDK_SHA1: 22105e410cf29afcf163760cc95522b9fb981121
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 07015949c7e201932a24cc6e53affbc4e35127aa
+          submodules: recursive
+
+      - name: Verify checked-out source is the pinned ref
+        run: test "$(git rev-parse HEAD)" = "$PINNED_LEANMT_SHA"
+
+      - name: Install pinned NDK r27d (27.3.13750724)
+        run: |
+          set -x
+          curl -fL --retry 3 -o "$RUNNER_TEMP/ndk.zip" \
+            "https://dl.google.com/android/repository/android-ndk-r27d-linux.zip"
+          echo "$PINNED_NDK_SHA1  $RUNNER_TEMP/ndk.zip" | sha1sum -c -
+          unzip -q "$RUNNER_TEMP/ndk.zip" -d "$RUNNER_TEMP"
+          rm "$RUNNER_TEMP/ndk.zip"
+          echo "ANDROID_NDK_HOME=$RUNNER_TEMP/android-ndk-r27d" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/android-ndk-r27d/ndk-build" --version | head -2
+
+      - name: Configure + build leanmt-probe
+        run: |
+          cmake -G Ninja -S . -B build \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-28 \
+            -DUSE_NEON=ON -DLEANMT_ARM64_TUNE=ON \
+            -DLEANMT_BUILD_PROBE=ON 2>&1 | tee configure.log
+          cmake --build build --target leanmt-probe 2>&1 | tee build.log
+
+      - name: Verify + package
+        run: |
+          B=build/probe/leanmt-probe
+          test -x "$B"
+          READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          file "$B" | tee probe-file.txt
+          "$READELF" -h "$B" | tee probe-readelf.txt
+          grep -q 'ARM aarch64' probe-file.txt
+          grep -q 'Machine:.*AArch64' probe-readelf.txt
+          sha256sum "$B" | tee leanmt-probe.sha256
+          cp "$B" leanmt-probe-07015949-arm64-r27d
+          file leanmt-probe-07015949-arm64-r27d
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: leanmt-probe-07015949-arm64-r27d
+          path: |
+            leanmt-probe-07015949-arm64-r27d
+            leanmt-probe.sha256
+            probe-file.txt
+            probe-readelf.txt
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
   # Host unit tests, x86_64 (SSE2 dispatch path).
   # ---------------------------------------------------------------------------
   host-test:
