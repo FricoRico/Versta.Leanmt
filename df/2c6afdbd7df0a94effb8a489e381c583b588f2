@@ -4,13 +4,13 @@
   "threads": 2,
   "batch": 1,
   "model": "ende.student.tiny11 v2 (pinned sha256)",
-  "model_load_ms": 36.0215,
+  "model_load_ms": 34.7569,
   "rss_start_kib": 3444,
-  "rss_after_load_kib": 101152,
+  "rss_after_load_kib": 101200,
   "results": [
-    {"words": 8, "batch": 1, "iterations": 30, "min_ms": 2.09197, "median_ms": 2.12092, "p95_ms": 2.16986, "max_ms": 2.18775, "rss_peak_kib": 45380},
-    {"words": 24, "batch": 1, "iterations": 30, "min_ms": 4.8915, "median_ms": 4.92564, "p95_ms": 4.97663, "max_ms": 4.97672, "rss_peak_kib": 50896},
-    {"words": 60, "batch": 1, "iterations": 30, "min_ms": 13.5845, "median_ms": 13.6661, "p95_ms": 13.775, "max_ms": 13.7856, "rss_peak_kib": 59440},
-    {"words": 120, "batch": 1, "iterations": 30, "min_ms": 119.825, "median_ms": 120.622, "p95_ms": 121.469, "max_ms": 121.97, "rss_peak_kib": 101152}
+    {"words": 8, "batch": 1, "iterations": 30, "min_ms": 2.1079, "median_ms": 2.12553, "p95_ms": 2.1515, "max_ms": 2.17245, "rss_peak_kib": 45384},
+    {"words": 24, "batch": 1, "iterations": 30, "min_ms": 4.84697, "median_ms": 4.87135, "p95_ms": 4.89194, "max_ms": 4.97536, "rss_peak_kib": 50900},
+    {"words": 60, "batch": 1, "iterations": 30, "min_ms": 13.3634, "median_ms": 13.4825, "p95_ms": 13.6154, "max_ms": 13.6392, "rss_peak_kib": 59444},
+    {"words": 120, "batch": 1, "iterations": 30, "min_ms": 118.039, "median_ms": 118.742, "p95_ms": 119.27, "max_ms": 119.333, "rss_peak_kib": 101200}
   ]
 }
