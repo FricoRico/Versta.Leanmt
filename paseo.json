@@ -1,0 +1,22 @@
+{
+  "worktree": {
+    "setup": [
+      "cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DLEANMT_BUILD_TESTS=ON"
+    ],
+    "teardown": [
+      "rm -rf build"
+    ],
+    "teardownTimeoutMs": 120000
+  },
+  "metadataGeneration": {
+    "branchName": {
+      "instructions": "Branch names come from the Kaneo card: MOD-<number>, e.g. MOD-21 — Leanmt work is filed under the Model Platform project. Base is main."
+    },
+    "commitMessage": {
+      "instructions": "Imperative subject under 72 characters naming the subsystem (core, jni, bench, probe, tests). third_party/ stays untouched: if upstream slimt needs a change, it lands as a patch with the reason in the body."
+    },
+    "pullRequest": {
+      "instructions": "Open against main; ci-gate is the required check. Body: what changed, the host build and CTest output, whether the Android matrix ran, and any performance numbers quoted from bench/ rather than estimated."
+    }
+  }
+}
